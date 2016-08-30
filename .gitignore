@@ -1,0 +1,3 @@
+*.pyc
+clients/sequencescripts/
+servers/Pulser/hardwareConfiguration.py

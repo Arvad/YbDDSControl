@@ -30,12 +30,13 @@ class ParsingWorker(QObject):
         self.connectedsignal =False
         self.tracking = False
         self.trackingparameterserver.emit(self.tracking)
-        self.ParameterID = 0
+        self.seqID = 0
         self.Busy = False
         self.sequencestorage = []
         self.mutex = QMutex()
         sys.path.append(hwconfigpath)
         self.steadystatedict = None
+        self.lastannouncement = (0L,0L,0,0L,False,0.0,0.0,0.0)
         global hardwareConfiguration
         from hardwareConfiguration import hardwareConfiguration
 
@@ -43,11 +44,12 @@ class ParsingWorker(QObject):
         self.parameters = paramdict
 
     def update_parameters(self,collection,name,value):
-        if collection == "Raman" and name=="Parameters":
-            Good,self.ParameterID,A,B,C = value
-            self.parameters['Raman']['A'] = A
-            self.parameters['Raman']['B'] = B
-            self.parameters['Raman']['C'] = C
+        if collection == "Raman" and name=="announce":
+            self.lastannouncement = value
+            self.seqID = value[1]
+            self.parameters['Raman']['A'] = value[5]
+            self.parameters['Raman']['B'] = value[6]
+            self.parameters['Raman']['C'] = value[7]
         else:
             self.parameters[collection][name] = value
 
@@ -76,7 +78,7 @@ class ParsingWorker(QObject):
         self.parsePulses(reducedtext)
         #toc = time.clock()
         #print 'Parsing time:                  ',toc-tic
-        self.parsing_done_trigger.emit(self.sequence,self.ParameterID)
+        self.parsing_done_trigger.emit(self.sequence,self.seqID)
         self.get_binary_repres()
         
 
@@ -193,41 +195,26 @@ class ParsingWorker(QObject):
     
     
     def get_binary_repres(self):
-  #      tottic = time.clock()
         seqObject = Sequence(self.steadystatedict)
-   #     tic = time.clock()
         seqObject.addDDSStandardPulses(self.sequence)
- #       toc = time.clock()
-#        print 'added pulses    ',toc-tic
         tic = time.clock()
         binary,ttl = seqObject.progRepresentation()
         toc = time.clock()
-        # print 'got binary     ',toc-tic
-        # import binascii
-        # for abyte in [binary[i:i+18] for i in range(2, len(binary)-2, 18)]:
-            # print '------------------lol'
-            # print binascii.hexlify(abyte),len(abyte)
-        # toc = time.clock()
-        
+                
         self.mutex.lock()
         try:
-            self.sequencestorage = [(str(binary),str(ttl),self.ParameterID)]
+            self.sequencestorage = (str(binary),str(ttl),self.lastannouncement)
         except Exception,e:
             print e
         finally:
             self.mutex.unlock()
-     #   print 'Binary compilation time:       ',toc-tottic
-     #   print 'compiling done'
-        self.new_sequence_trigger.emit()
+            self.new_sequence_trigger.emit()
 
     def get_sequence(self):
         if self.mutex.tryLock(1):
             try:
-                if len(self.sequencestorage)<2:
-                    currentsequence, currentttl, currentID = self.sequencestorage[0]
-                else:
-                    currentsequence, currentttl, currentID = self.sequencestorage.pop(0)
-                return currentsequence, currentttl, currentID
+                currentsequence, currentttl, currentannouncement = self.sequencestorage
+                return currentsequence, currentttl, currentannouncement
             except Exception,e:
                 print e
                 return None,None,None

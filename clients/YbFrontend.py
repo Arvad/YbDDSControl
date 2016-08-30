@@ -66,12 +66,14 @@ class mainwindow(QtGui.QMainWindow):
         controlwidget = self.makeControlWidget()
         sequencewidget = self.makeSequenceWidget()
         parameterswidget = self.makeParameterWidget()
+        spectrumplottingwidget = self.makeSpectrumPlottingWidget()
         centralwidget = QtGui.QWidget()
         tabwidget = QtGui.QTabWidget()
 
         tabwidget.addTab(sequencewidget,'Sequence')
         tabwidget.addTab(controlwidget,'Controls')
         tabwidget.addTab(parameterswidget,'Parameters')
+        tabwidget.addTab(spectrumplottingwidget,'Spectra')
 
         layout = QtGui.QHBoxLayout(self)
         layout.addWidget(tabwidget)
@@ -95,6 +97,14 @@ class mainwindow(QtGui.QMainWindow):
     def closeEvent(self,event):
         self.reactor.stop()
   
+    #################
+    # Spectrum plotting tab panel
+    #################
+    def makeSpectrumPlottingWidget(self):
+        from SpectrumPlottingWidget import SpectrumPlottingWidget
+        widget = SpectrumPlottingWidget()
+        return widget
+        
 
     #################
     # Control tab panel
@@ -241,7 +251,7 @@ class mainwindow(QtGui.QMainWindow):
         self.pulserworker.sequence_done_trigger.connect(self.sendIdtoParameterVault)
         self.pulserthread.start()
         
-        self.pulserworker.set_shottime(2) #cycletime of operation
+        self.pulserworker.set_shottime(1) #cycletime of operation
 
     @inlineCallbacks
     def setupListeners(self):
@@ -330,7 +340,7 @@ class mainwindow(QtGui.QMainWindow):
             treeitem.setText(1,str(val))
         except Exception, e:
             self.messageout('DEBUG Parameter Change: \n' + repr(e))
-        self.messageout('New Value from Parameter Vault\n {:} = {:}'.format(name,val))
+        #self.messageout('New Value from Parameter Vault\n {:} = {:}'.format(name,val))
 
 
     @inlineCallbacks
@@ -349,12 +359,12 @@ class mainwindow(QtGui.QMainWindow):
             print repr(e)
         
     @inlineCallbacks
-    def sendIdtoParameterVault(self,intID,good = False):
-        self.paramID = intID
+    def sendIdtoParameterVault(self,completedannouncement):
+        self.paramID = completedannouncement[1]
         pv = yield self.connection.get_server('ParameterVault')
-        yield pv.set_parameter('Raman','Last Shot',(good,intID))
+        yield pv.set_parameter('Raman','confirm',completedannouncement)
         #print 'time updated id: ',time.time()
-        self.messageout('Completed shot: {:}'.format(intID))
+        self.messageout('Completed shot: {:}'.format(completedannouncement[1]))
 
         
 

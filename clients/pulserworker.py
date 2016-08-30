@@ -10,7 +10,7 @@ class PulserWorker(QObject):
     stopsignal = pyqtSignal()
     loopsignal = pyqtSignal()
     pulsermessages = pyqtSignal(str)
-    sequence_done_trigger = pyqtSignal(int,bool)
+    sequence_done_trigger = pyqtSignal(tuple)
 
     def __init__(self,reactor,connection,parsingworker):
         
@@ -38,18 +38,18 @@ class PulserWorker(QObject):
         self.pulsermessages.emit('Pulser: Pulser timed out')
 
         
-    def do_sequence(self,currentsequence,currentttl,currentID):
+    def do_sequence(self,currentsequence,currentttl,currentannouncement):
         import labrad
         cnx = labrad.connect()
         p = cnx.pulser
-        self.pulsermessages.emit('Pulser: Programming:' + str(currentID))
+        self.pulsermessages.emit('Pulser: Programming:' + str(currentannouncement[1]))
         p.new_sequence()
         #tic = time.clock()
         #p.stop_sequence()
         p.program_dds_and_ttl(currentsequence,currentttl)
         #toc = time.clock()
         #print "programmed ", toc-tic
-        self.pulsermessages.emit('Pulser: Running:' + str(currentID))
+        self.pulsermessages.emit('Pulser: Running:' + str(currentannouncement[1]))
         p.start_number(1)
         #toc = time.clock()
         #print 'Programming and starting time: ',toc-tic
@@ -64,11 +64,11 @@ class PulserWorker(QObject):
             #print 'Sequence done:                 ',toc-tic
         except labrad.errors.RequestTimeoutError, e:
             p.stop_sequence()
-            print repr(e)
+            #print repr(e)
             self.pulsermessages.emit('Pulser: Timed out')
         else:
             #print 'time done:       ',time.time()
-            self.sequence_done_trigger.emit(currentID,True)
+            self.sequence_done_trigger.emit(currentannouncement)
             
             self.pulsermessages.emit('Metablock counts: '+ str(counts[0]))
 
@@ -78,13 +78,13 @@ class PulserWorker(QObject):
     @pyqtSlot()
     def run(self):
         while not self.stopping:
-            currentsequence, currentttl, currentID = self.parsingworker.get_sequence()
-            if None in (currentsequence, currentttl, currentID):
+            currentsequence, currentttl, currentannouncement = self.parsingworker.get_sequence()
+            if None in (currentsequence, currentttl, currentannouncement):
                 #self.pulsermessages.emit('Pulser: Error in retrieveing sequence from parser')
                 time.sleep(0.2)
             else:
                 self.stopping = True
-                self.do_sequence(currentsequence, currentttl, currentID)
+                self.do_sequence(currentsequence, currentttl, currentannouncement)
             
         self.stopping = False
         
