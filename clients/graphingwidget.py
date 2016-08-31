@@ -6,6 +6,11 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import AutoMinorLocator, MultipleLocator
 import numpy as np
 from connection import connection
+import pyqtgraph as pg
+import sys
+
+global harwareConfiguration
+
 
 class graphingwidget(QtGui.QWidget):
 
@@ -20,44 +25,41 @@ class graphingwidget(QtGui.QWidget):
 
     @inlineCallbacks
     def initialize(self):
-        server = yield self.connection.get_server('Pulser')
-        channellist = yield server.get_dds_channels()
+        p = yield self.connection.get_server('Pulser')
+        hwconfigpath = yield p.get_hardwareconfiguration_path()
+        sys.path.append(hwconfigpath)
+        global hardwareConfiguration
+        from hardwareConfiguration import hardwareConfiguration
+        self.ddslist = hardwareConfiguration.ddsDict
         self.plottingthread = QThread()
         self.plottingworker = PlottingWorker()
         self.plottingworker.plotted_trigger.connect(self.update)
         self.plottingworker.moveToThread(self.plottingthread)
         self.plottingthread.start()
-        self.do_layout(channellist)
-
-
-    def do_layout(self,channellist):
-        self.figure = plt.figure(0,(5,5))
-        self.canvas = FigureCanvas(self.figure)
-        self.canvas.mpl_connect('motion_notify_event',self.update_tooltip)
-        self.layoutVertical = QtGui.QVBoxLayout(self)
-        self.layoutVertical.addWidget(self.canvas)
+        self.do_layout(self.ddslist)
         
 
 
-        axlist = {}
-
-        for i in range(len(channellist)):
-            axlist[channellist[i]] = self.figure.add_subplot(16,1,i+1)
-
-        for name,anax in axlist.iteritems():
-            anax.axes.get_xaxis().set_ticks([])
-            anax.get_yaxis().set_ticks([])
-            anax.set_ylim(0,1.5)
-            anax.text(-0.01, 0.5,name, horizontalalignment='right',
-                                                 verticalalignment='center',
-                                              transform=anax.transAxes)
-        self.figure.subplots_adjust(left=0.2,right=0.995,top=0.99,bottom=0.01)
-        self.channel_ax_list = axlist
-        self.plottingworker.setup_axes(axlist)
+    def do_layout(self,ddslist):
+        yaxis = pg.AxisItem(orientation='left')
+        ticks = []
+        sorteddict = sorted(self.ddslist.items(),key =lambda x: x[1].channelnumber)
+        for i in range(0,17):
+            if i < len(sorteddict):
+                string = sorteddict[i][0]
+            else:
+                string = ""
+            ticks.append((i+0.5,string))
+        yaxis.setTicks([ticks])
+        self.figure = pg.PlotWidget(axisItems ={'left':yaxis})
+        self.layoutVertical = QtGui.QVBoxLayout(self)
+        self.layoutVertical.addWidget(self.figure)
+ 
+        self.plottingworker.setup_figure(ddslist,self.figure)
         
 
     def update(self):
-        self.canvas.draw()
+        pass
 
     def update_tooltip(self,event):
         if event.inaxes:
@@ -69,15 +71,24 @@ class PlottingWorker(QObject):
     start = pyqtSignal(list)
     def __init__(self):
         super(PlottingWorker,self).__init__()
-        self.thread_channel_ax_list = None
         self.start.connect(self.run)
 
-    def setup_axes(self,axlist):
-        self.thread_channel_ax_list = axlist
+    def setup_figure(self,ddslist,figure):
+        self.thread_figure = figure
+        self.plotlist = {}
+        for adds,config in ddslist.iteritems():
+            self.plotlist[adds] = (config.channelnumber,pg.PlotCurveItem(range(10),[1]*10,pen='w'))
+            self.thread_figure.addItem(self.plotlist[adds][1])
+        self.thread_figure.setYRange(0,17)
+        self.thread_figure.setMouseEnabled(x=False,y=False)
+        self.thread_figure.showGrid(x=True,y=True,alpha=0.4)
 
+            
     def do_sequence(self,sequence):
         lastend = 0
-        for achannelname, achannelax in self.thread_channel_ax_list.iteritems():
+        counter = 1.5
+        self.thread_figure.clear()
+        for achannelname, aplot in self.plotlist.iteritems():
             channelpulses = [i for i in sequence if i[0] == achannelname]
             channelpulses.sort(key= lambda name: name[1]['ms'])
             starttimes = []
@@ -96,33 +107,20 @@ class PlottingWorker(QObject):
                 xdata += [starttimes[i]]*2 + [endtimes[i]]*2
                                
                 if ydata[-1] == 0:
-                    ydata += [0,1,1,0]
+                    ydata += [0.25,0.75,0.75,0.25]
                 else:
-                    ydata += [1,0,0,1]
+                    ydata += [0.75,0.25,0.25,0.75]
 
             lastend = int(xdata[-1]) if lastend<xdata[-1] else lastend
+            self.plotlist[achannelname] = (aplot[0],pg.PlotCurveItem(xdata,[i+ aplot[0] for i in ydata],pen='w'))
+            counter += 1
+        for aplotname, aplotitem in self.plotlist.iteritems():
+            self.thread_figure.addItem(aplotitem[1])
 
-            achannelax.clear()
-            achannelax.plot(xdata,ydata)
-
-
-        minorLocator = AutoMinorLocator()
-
-        for i in range(len(self.thread_channel_ax_list)):
-            achannelax = self.thread_channel_ax_list.values()[i]
-            name = self.thread_channel_ax_list.keys()[i]
-            achannelax.set_ylim(0,1.5)
-            achannelax.set_xlim(0,lastend)
-            achannelax.get_yaxis().set_ticks([])
-            achannelax.get_xaxis().set_minor_locator(minorLocator)
-            achannelax.get_xaxis().grid(True,which='both')
-            achannelax.text(-0.01, 0.5,name, horizontalalignment='right',
-                                                 verticalalignment='center',
-                                              transform=achannelax.transAxes)
-            if i < (len(self.thread_channel_ax_list)-1):
-                achannelax.get_xaxis().set_ticklabels([])
+        
     
     @pyqtSlot(list)
     def run(self,sequence):
         self.do_sequence(sequence)
         self.plotted_trigger.emit()
+ 
