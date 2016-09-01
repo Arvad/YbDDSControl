@@ -114,7 +114,8 @@ class ParsingWorker(QObject):
         for loopparams, lines in listofstrings:
             begin,end,it = loopparams.split(',')
             lines = lines.strip()
-            itervar = begin.split('=')[0]
+            itervar = begin.split('=')[0].strip()
+            print itervar
             begin=int(begin.split('=')[1])
             it = int(it.split('+')[1])
             end = int(end.split('<')[1])

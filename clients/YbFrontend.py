@@ -149,7 +149,7 @@ class mainwindow(QtGui.QMainWindow):
         splitterwidget = QtGui.QSplitter()
         #string = "#def\n"+"tstart = A from ParameterVault\n"+"#enddef\n"
         #string = "Channel Raman_rad do 360  MHz with -10 dBm for 1000 ms at 40 ms in mode Normal\n"
-        string = "Channel DDS_4 do 200 MHz with 9 dBm for 100 ms at 0.01 ms in mode Normal\n Channel DDS_2 do 200 MHz with 9 dBm for 100 ms at 0.01 ms in mode Normal"
+        string = "Channel DDS_4 do 200 MHz with 9 dBm for 100 ms at 0.01 ms in mode Normal\nChannel DDS_2 do 200 MHz with 9 dBm for 100 ms at 0.01 ms in mode Normal"
         #string += "Channel DDS_2 do 10  MHz with -10 dBm for 1 ms at 700 ms in mode Normal\n"
         
         self.graphingwidget = graphingwidget(self.reactor,self.connection)
@@ -238,7 +238,7 @@ class mainwindow(QtGui.QMainWindow):
         self.parsingworker.trackingparameterserver.connect(self.ledtracking.setState)
         self.parsingworker.parsermessages.connect(self.messageout)
         #self.parsingworker.parsing_done_trigger.connect(self.done_parsing)
-        self.parsingworker.parsing_done_trigger.connect(self.graphingwidget.plottingworker.run)
+        self.parsingworker.parsing_done_trigger.connect(self.graphingwidget.do_sequence)
         self.stop_signal.connect(self.parsingworker.reset_sequence_storage)
         self.parsingthread.start()
         self.parsingworker.set_parameters(self.parameters)

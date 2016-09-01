@@ -8,6 +8,7 @@ import numpy as np
 from connection import connection
 import pyqtgraph as pg
 import sys
+import time
 
 global harwareConfiguration
 
@@ -31,16 +32,16 @@ class graphingwidget(QtGui.QWidget):
         global hardwareConfiguration
         from hardwareConfiguration import hardwareConfiguration
         self.ddslist = hardwareConfiguration.ddsDict
-        self.plottingthread = QThread()
-        self.plottingworker = PlottingWorker()
-        self.plottingworker.plotted_trigger.connect(self.update)
-        self.plottingworker.moveToThread(self.plottingthread)
-        self.plottingthread.start()
-        self.do_layout(self.ddslist)
+        #self.plottingthread = QThread()
+        #self.plottingworker = PlottingWorker(self.reactor)
+        #self.plottingworker.plotted_trigger.connect(self.update)
+        #self.plottingworker.moveToThread(self.plottingthread)
+        #self.plottingthread.start()
+        self.do_layout()
         
 
 
-    def do_layout(self,ddslist):
+    def do_layout(self):
         yaxis = pg.AxisItem(orientation='left')
         ticks = []
         sorteddict = sorted(self.ddslist.items(),key =lambda x: x[1].channelnumber)
@@ -54,25 +55,9 @@ class graphingwidget(QtGui.QWidget):
         self.figure = pg.PlotWidget(axisItems ={'left':yaxis})
         self.layoutVertical = QtGui.QVBoxLayout(self)
         self.layoutVertical.addWidget(self.figure)
- 
-        self.plottingworker.setup_figure(ddslist,self.figure)
-        
-
-    def update(self):
-        pass
-
-    def update_tooltip(self,event):
-        if event.inaxes:
-            x = event.xdata
-            self.canvas.setToolTip(str(int(x)))
-
-class PlottingWorker(QObject):
-    plotted_trigger= pyqtSignal()
-    start = pyqtSignal(list)
-    def __init__(self):
-        super(PlottingWorker,self).__init__()
-        self.start.connect(self.run)
-
+        self.setup_figure(self.ddslist,self.figure)
+        #self.plottingworker.setup_figure(self.ddslist,self.figure)
+    
     def setup_figure(self,ddslist,figure):
         self.thread_figure = figure
         self.plotlist = {}
@@ -83,11 +68,10 @@ class PlottingWorker(QObject):
         self.thread_figure.setMouseEnabled(x=False,y=False)
         self.thread_figure.showGrid(x=True,y=True,alpha=0.4)
 
-            
+    @pyqtSlot(list)       
     def do_sequence(self,sequence):
-        lastend = 0
-        counter = 1.5
-        self.thread_figure.clear()
+        xdatalist = []
+        ydatalist = []
         for achannelname, aplot in self.plotlist.iteritems():
             channelpulses = [i for i in sequence if i[0] == achannelname]
             channelpulses.sort(key= lambda name: name[1]['ms'])
@@ -107,20 +91,94 @@ class PlottingWorker(QObject):
                 xdata += [starttimes[i]]*2 + [endtimes[i]]*2
                                
                 if ydata[-1] == 0:
-                    ydata += [0.25,0.75,0.75,0.25]
+                    ydata += [0.25 + aplot[0],0.75 + aplot[0],0.75 + aplot[0],0.25 + aplot[0]]
                 else:
-                    ydata += [0.75,0.25,0.25,0.75]
-
-            lastend = int(xdata[-1]) if lastend<xdata[-1] else lastend
-            self.plotlist[achannelname] = (aplot[0],pg.PlotCurveItem(xdata,[i+ aplot[0] for i in ydata],pen='w'))
-            counter += 1
-        for aplotname, aplotitem in self.plotlist.iteritems():
-            self.thread_figure.addItem(aplotitem[1])
-
+                    ydata += [0.75 + aplot[0],0.25 + aplot[0],0.25 + aplot[0],0.75 + aplot[0]]
+            
+            xdatalist.append(xdata)
+            ydatalist.append(ydata)
+        self.plot(xdatalist,ydatalist)
         
+        
+    def plot(self,xlist,ylist):
+        self.thread_figure.clear()
+        for i in range(len(xlist)):
+            xdata = xlist[i]
+            ydata = ylist[i]
+            if len(xdata)>1:
+                self.thread_figure.addItem(pg.PlotCurveItem(xdata,ydata,pen='w'))
+    
+    def update(self):
+        pass
+
+    def update_tooltip(self,event):
+        if event.inaxes:
+            x = event.xdata
+            self.canvas.setToolTip(str(int(x)))
+
+class PlottingWorker(QObject):
+    plotted_trigger= pyqtSignal()
+    do = pyqtSignal(list)
+    def __init__(self,reactor):
+        super(PlottingWorker,self).__init__()
+        self.reactor = reactor
+        self.do.connect(self.do_sequence)
+
+    def setup_figure(self,ddslist,figure):
+        self.thread_figure = figure
+        self.plotlist = {}
+        for adds,config in ddslist.iteritems():
+            self.plotlist[adds] = (config.channelnumber,pg.PlotCurveItem(range(10),[1]*10,pen='w'))
+            self.thread_figure.addItem(self.plotlist[adds][1])
+        self.thread_figure.setYRange(0,17)
+        self.thread_figure.setMouseEnabled(x=False,y=False)
+        self.thread_figure.showGrid(x=True,y=True,alpha=0.4)
+
+    @pyqtSlot(list)       
+    def do_sequence(self,sequence):
+        xdatalist = []
+        ydatalist = []
+        for achannelname, aplot in self.plotlist.iteritems():
+            channelpulses = [i for i in sequence if i[0] == achannelname]
+            channelpulses.sort(key= lambda name: name[1]['ms'])
+            starttimes = []
+            endtimes = []
+            frequencies = []
+            amplitudes = []
+            for apulse in channelpulses:
+                starttimes.append(apulse[1]['ms'])
+                endtimes.append((apulse[1]+ apulse[2])['ms'])
+                frequencies.append(apulse[3]['MHz'])
+                amplitudes.append(apulse[4]['dBm'])
+
+            xdata = [0]
+            ydata = [0]
+            for i in range(len(starttimes)):
+                xdata += [starttimes[i]]*2 + [endtimes[i]]*2
+                               
+                if ydata[-1] == 0:
+                    ydata += [0.25 + aplot[0],0.75 + aplot[0],0.75 + aplot[0],0.25 + aplot[0]]
+                else:
+                    ydata += [0.75 + aplot[0],0.25 + aplot[0],0.25 + aplot[0],0.75 + aplot[0]]
+            
+            print xdata
+            xdatalist.append(xdata)
+            ydatalist.append(ydata)
+        self.plot(xdatalist,ydatalist)
+        
+        
+    def plot(self,xlist,ylist):
+        self.thread_figure.clear()
+        for i in range(len(xlist)):
+            xdata = xlist[i]
+            ydata = ylist[i]
+            if len(xdata)>1:
+                print "before"
+                self.thread_figure.addItem(pg.PlotCurveItem(xdata,ydata,pen='w'))
+                print "plottet"
     
     @pyqtSlot(list)
-    def run(self,sequence):
-        self.do_sequence(sequence)
+    def runsignal(self,sequence):
+        self.do.emit(sequence)
         self.plotted_trigger.emit()
- 
+         
