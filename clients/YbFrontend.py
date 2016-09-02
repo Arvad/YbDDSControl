@@ -161,6 +161,8 @@ class mainwindow(QtGui.QMainWindow):
         leftlayout = QtGui.QGridLayout()
         leftlayout.addWidget(buttonpanel,0,0)
         leftlayout.addWidget(self.writingwidget, 1,0,4,1)
+        leftlayout.setSpacing(0)
+        leftlayout.setContentsMargins(0,0,0,0)
         leftwidget.setLayout(leftlayout)
 
 
@@ -217,6 +219,8 @@ class mainwindow(QtGui.QMainWindow):
         layout.addWidget(LineTrigbutton,1,1)
         layout.addWidget(filetoolbar,3,0,1,2)
         layout.addWidget(self.Messagebox,1,2,3,4)
+        layout.setSpacing(0)
+        layout.setContentsMargins(0,0,0,0)
         panel.setLayout(layout)
         return panel
 
