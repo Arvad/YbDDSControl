@@ -237,22 +237,21 @@ class mainwindow(QtGui.QMainWindow):
         self.parsingworker.busy_trigger.connect(self.ledparsing.setState)
         self.parsingworker.trackingparameterserver.connect(self.ledtracking.setState)
         self.parsingworker.parsermessages.connect(self.messageout)
-        #self.parsingworker.parsing_done_trigger.connect(self.done_parsing)
         self.parsingworker.new_sequence_trigger.connect(self.graphingwidget.do_sequence)
-        self.stop_signal.connect(self.parsingworker.reset_sequence_storage)
+        self.stop_signal.connect(self.parsingworker.stop)
         self.parsingthread.start()
         self.parsingworker.set_parameters(self.parameters)
 
     def start_pulserthread(self):
         self.pulserthread = QThread()
-        self.pulserworker = PulserWorker(self.reactor,self.connection)
+        self.pulserworker = PulserWorker(self.reactor,self.connection,self.parsingworker)
         self.pulserworker.moveToThread(self.pulserthread)
         self.pulserworker.pulsermessages.connect(self.messageout)
         self.pulserworker.sequence_done_trigger.connect(self.sendIdtoParameterVault)
         self.parsingworker.new_sequence_trigger.connect(self.pulserworker.run)
         self.pulserthread.start()
         
-        self.pulserworker.set_shottime(1) #cycletime of operation
+        self.pulserworker.set_shottime(0.6) #cycletime of operation
 
     @inlineCallbacks
     def setupListeners(self):
@@ -385,7 +384,6 @@ class mainwindow(QtGui.QMainWindow):
         self.parsingworker.start.emit()
 
     def on_Stop(self):
-        self.parsingworker.Parsing = False
         self.stop_signal.emit()
         self.pulserworker.stopsignal.emit()
         

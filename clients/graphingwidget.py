@@ -48,7 +48,6 @@ class graphingwidget(QtGui.QWidget):
         self.layoutVertical = QtGui.QVBoxLayout(self)
         self.layoutVertical.addWidget(self.figure)
     
-        self.plotlist = {}
         for adds,config in self.ddslist.iteritems():
             self.figure.addItem(pg.PlotCurveItem(range(10),[1]*10,pen='w'))
         self.figure.setYRange(0,17)
@@ -57,9 +56,10 @@ class graphingwidget(QtGui.QWidget):
 
     @pyqtSlot(list)       
     def do_sequence(self,sequence):
+        tic = time.clock()
         xdatalist = []
         ydatalist = []
-        for achannelname, aplot in self.plotlist.iteritems():
+        for achannelname, adds in self.ddslist.iteritems():
             channelpulses = [i for i in sequence if i[0] == achannelname]
             channelpulses.sort(key= lambda name: name[1]['ms'])
             starttimes = []
@@ -69,22 +69,25 @@ class graphingwidget(QtGui.QWidget):
             for apulse in channelpulses:
                 starttimes.append(apulse[1]['ms'])
                 endtimes.append((apulse[1]+ apulse[2])['ms'])
-                frequencies.append(apulse[3]['MHz'])
-                amplitudes.append(apulse[4]['dBm'])
+            
+            yhigh = 0.75+adds.channelnumber
+            ylow = 0.25+adds.channelnumber
 
             xdata = [0]
-            ydata = [0]
+            ydata = [ylow]
             for i in range(len(starttimes)):
                 xdata += [starttimes[i]]*2 + [endtimes[i]]*2
-                               
-                if ydata[-1] == 0:
-                    ydata += [0.25 + aplot[0],0.75 + aplot[0],0.75 + aplot[0],0.25 + aplot[0]]
+                
+                if ydata[-1] == ylow:
+                    ydata += [ylow,yhigh,yhigh,ylow]
                 else:
-                    ydata += [0.75 + aplot[0],0.25 + aplot[0],0.25 + aplot[0],0.75 + aplot[0]]
+                    ydata += [yhigh,ylow,ylow,yhigh]
             
             xdatalist.append(xdata)
             ydatalist.append(ydata)
         self.plot(xdatalist,ydatalist)
+        toc = time.clock()
+        print "plotted ",toc-tic
         
         
     def plot(self,xlist,ylist):

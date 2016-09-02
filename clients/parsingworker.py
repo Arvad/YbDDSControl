@@ -16,7 +16,7 @@ class ParsingWorker(QObject):
     start = pyqtSignal()
     trackingparameterserver = pyqtSignal(bool)
     parsermessages = pyqtSignal(str)
-    new_sequence_trigger = pyqtSignal()
+    new_sequence_trigger = pyqtSignal(list)
 
 
     def __init__(self,hwconfigpath,text,reactor,connection,cntx):
@@ -209,7 +209,7 @@ class ParsingWorker(QObject):
             print e
         finally:
             self.mutex.unlock()
-            self.new_sequence_trigger.emit()
+            self.new_sequence_trigger.emit(self.sequence)
 
     def get_sequence(self):
         if self.mutex.tryLock(1):
@@ -226,15 +226,24 @@ class ParsingWorker(QObject):
             return None, None, None
         
     @pyqtSlot()
+    def stop(self):
+        self.tracking = False
+        self.trackingparameterserver.emit(self.tracking)
+        self.reset_sequence_storage
+    
+    
     def reset_sequence_storage(self):
         locker = QMutexLocker(self.mutex)
         self.sequencestorage = []
         
     @pyqtSlot()
     def run(self):
+        tic = time.clock()
         self.Busy = True
         self.busy_trigger.emit(self.Busy)
         self.parse_text()
+        toc = time.clock()
+        print 'Parsed ',toc-tic
         self.parsermessages.emit('Parser: Parsing done')
         self.Busy = False
         self.busy_trigger.emit(self.Busy)            
@@ -281,6 +290,7 @@ class Sequence():
             self.ttlProgram = self.parseTTL()
             fullbinary = None
             metablockcounter = 0
+            print self.ddsSettings
             for name, pulsebinary in self.ddsSettings.iteritems():
                 addresse = self.ddsDict[name].channelnumber
                 blocklist = [pulsebinary[i:i+16] for i in range(0, len(pulsebinary), 16)]
@@ -294,7 +304,6 @@ class Sequence():
                             repeat += 1
                             j += 1
                     except IndexError ,e:
-                    
                         pass
                     i = j
                     if fullbinary is None:

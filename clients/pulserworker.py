@@ -12,7 +12,7 @@ class PulserWorker(QObject):
     pulsermessages = pyqtSignal(str)
     sequence_done_trigger = pyqtSignal(tuple)
 
-    def __init__(self,reactor,connection):
+    def __init__(self,reactor,connection,parsingworker):
         
         super(PulserWorker,self).__init__()
         self.reactor = reactor
@@ -39,38 +39,32 @@ class PulserWorker(QObject):
         
     def do_sequence(self,currentsequence,currentttl,currentannouncement):
         import labrad
+        tic = time.clock()
         cnx = labrad.connect()
         p = cnx.pulser
         self.pulsermessages.emit('Pulser: Programming:' + str(currentannouncement[1]))
         p.new_sequence()
-        #tic = time.clock()
-        #p.stop_sequence()
         p.program_dds_and_ttl(currentsequence,currentttl)
-        #toc = time.clock()
-        #print "programmed ", toc-tic
+        toc = time.clock()
+        print "programmed ", toc-tic
+        
         self.pulsermessages.emit('Pulser: Running:' + str(currentannouncement[1]))
-        p.start_number(1)
-        #toc = time.clock()
-        #print 'Programming and starting time: ',toc-tic
+        p.start_single()
         try:
-            #tic = time.clock()
             p.wait_sequence_done(timeout=self.shottime)
             counts = p.get_metablock_counts()
             
             
             p.stop_sequence() #The stop signal stops the loop *if more than one repetition was set, and resets the OKfpga (the ttltimings)
-            #toc = time.clock()
-            #print 'Sequence done:                 ',toc-tic
         except labrad.errors.RequestTimeoutError, e:
             p.stop_sequence()
-            #print repr(e)
             self.pulsermessages.emit('Pulser: Timed out')
         else:
-            #print 'time done:       ',time.time()
+            toc = time.clock()
+            print 'Program and run', toc-tic-0.5
             self.sequence_done_trigger.emit(currentannouncement)
-            
             self.pulsermessages.emit('Metablock counts: '+ str(counts[0]))
-
+        
         cnx.disconnect()
         
     
@@ -79,7 +73,6 @@ class PulserWorker(QObject):
         while not self.stopping:
             currentsequence, currentttl, currentannouncement = self.parsingworker.get_sequence()
             if None in (currentsequence, currentttl, currentannouncement):
-                #self.pulsermessages.emit('Pulser: Error in retrieveing sequence from parser')
                 time.sleep(0.2)
             else:
                 self.stopping = True
