@@ -238,17 +238,18 @@ class mainwindow(QtGui.QMainWindow):
         self.parsingworker.trackingparameterserver.connect(self.ledtracking.setState)
         self.parsingworker.parsermessages.connect(self.messageout)
         #self.parsingworker.parsing_done_trigger.connect(self.done_parsing)
-        self.parsingworker.parsing_done_trigger.connect(self.graphingwidget.do_sequence)
+        self.parsingworker.new_sequence_trigger.connect(self.graphingwidget.do_sequence)
         self.stop_signal.connect(self.parsingworker.reset_sequence_storage)
         self.parsingthread.start()
         self.parsingworker.set_parameters(self.parameters)
 
     def start_pulserthread(self):
         self.pulserthread = QThread()
-        self.pulserworker = PulserWorker(self.reactor,self.connection,self.parsingworker)
+        self.pulserworker = PulserWorker(self.reactor,self.connection)
         self.pulserworker.moveToThread(self.pulserthread)
         self.pulserworker.pulsermessages.connect(self.messageout)
         self.pulserworker.sequence_done_trigger.connect(self.sendIdtoParameterVault)
+        self.parsingworker.new_sequence_trigger.connect(self.pulserworker.run)
         self.pulserthread.start()
         
         self.pulserworker.set_shottime(1) #cycletime of operation

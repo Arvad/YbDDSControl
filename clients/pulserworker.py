@@ -12,12 +12,11 @@ class PulserWorker(QObject):
     pulsermessages = pyqtSignal(str)
     sequence_done_trigger = pyqtSignal(tuple)
 
-    def __init__(self,reactor,connection,parsingworker):
+    def __init__(self,reactor,connection):
         
         super(PulserWorker,self).__init__()
         self.reactor = reactor
         self.parsingworker = parsingworker
-        self.parsingworker.new_sequence_trigger.connect(self.run)
         self.connection = connection
         self.sequencestorage = []
         self.startsignal.connect(self.run)
