@@ -18,6 +18,9 @@ timeout = 20
 from labrad.server import LabradServer, setting, Signal
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
+import os
+import datetime
+import sys
 
 class ParameterVault(LabradServer):
     """
@@ -26,11 +29,15 @@ class ParameterVault(LabradServer):
     name = "ParameterVault"
     registryDirectory = ['','Servers', 'Parameter Vault']
     onParameterChange = Signal(612512, 'signal: parameter change', '(ss)')
+    errorpath = []
 
     @inlineCallbacks
     def initServer(self):
         self.listeners = set()
-        self.parameters = {}  
+        self.parameters = {}
+        self.errorlogfile = None
+        if not os.path.isdir("./errorlogging"):
+            os.mkdir("errorlogging")
         yield self.load_parameters()
     
     def initContext(self, c):
@@ -86,6 +93,7 @@ class ParameterVault(LabradServer):
             fullDir = regDir + key
             yield self.client.registry.cd(fullDir)
             yield self.client.registry.set(parameter_name, value)
+
     
     def _save_full(self, key, value):
         t,item = self.parameters[key]
@@ -133,7 +141,7 @@ class ParameterVault(LabradServer):
             self.parameters[key] = self._save_full(key, value)
         notified = self.getOtherListeners(c)
         self.onParameterChange((key[0], key[1]), notified)
-        print "parameter changed"
+        #print "parameter changed"
 
     @setting(1, "Get Parameter", collection = 's', parameter_name = 's', checked = 'b', returns = ['?'])
     def getParameter(self, c, collection, parameter_name, checked = True):
@@ -175,6 +183,47 @@ class ParameterVault(LabradServer):
     def add_parameter(self,collection,parameter_name,value):
         self.parameters[tuple(collection,parameter_name)] = value
 
+    @setting(8, "Start Error Log", returns = "s")
+    def start_error_log(self,c,fname = None):
+        time = datetime.datetime.today().strftime("%Y%m%d_%H%M%S")
+        if fname is None:
+             fstring = "Errorlog_YbClock_" + time + ".txt"
+        else:
+            fstring = fname + ".txt"
+        if self.errorlogfile is None:
+            self.errorlogfile = open("./errorlogging/"+fstring,'w')
+            self.errorlogfile.write('Error log for YbClock\n')
+            self.errorlogfile.write('Started on: ')
+            self.errorlogfile.write(time + "\n")
+            return self.errorlogfile.name
+        else:
+            return "File not opened - another file is already logging"
+
+    @setting(9, "Check Error Log", returns = "(b,s)")
+    def check_error_log(self,c):
+        if self.errorlogfile is not None:
+            return (True,self.errorlogfile.name)
+        else:
+            return (False,"")
+
+
+    @setting(10, "Write Error", returns ="s")
+    def write_error(self,c,errorstring):
+        if self.errorlogfile is not None:
+            self.errorlogfile.write(errorstring + '\n')
+            return "Wrote to " + self.errorlogfile.name
+        else:
+            return "No errorlog running"
+
+    @setting(11,'Stop Error Log', returns ='s')
+    def stop_error_log(self,c):
+        if self.errorlogfile is not None:
+            name = self.errorlogfile.name
+            self.errorlogfile.close()
+            self.errorlogfile = None
+            return "Closed " + name
+        else:
+            return "No errorlog running"
 
     @inlineCallbacks
     def stopServer(self):
@@ -183,6 +232,7 @@ class ParameterVault(LabradServer):
         except AttributeError:
             #if values don't exist yet, i.e stopServer was called due to an Identification Rrror
             pass
+
       
 if __name__ == "__main__":
     from labrad import util
