@@ -321,13 +321,13 @@ class Pulser(DDS, LineTrigger):
         """
         if timeout is None: timeout = self.sequenceTimeRange[1]
         #print timeout
-        requestCalls = int(timeout / 0.050 ) #number of request calls
+        requestCalls = int(timeout / 0.005 ) #number of request calls
         for i in range(requestCalls):
             yield self.inCommunication.acquire()
             done = yield deferToThread(self.api.isSeqDone)
             self.inCommunication.release()
             if done: returnValue(True)
-            yield self.wait(0.050)
+            yield self.wait(0.005)
         returnValue(False)
     
     @setting(17, 'Repeatitions Completed', returns = 'w')
