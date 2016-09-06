@@ -24,7 +24,7 @@ class ParsingWorker(QObject):
         self.text = text
         self.reactor = reactor
         self.connection = connection
-        self.sequence = []
+        self.sequence = {'Normal': [], 'Modulation':[]}
         self.defineRegexPatterns()
         self.start.connect(self.run)
         self.connectedsignal =False
@@ -60,7 +60,7 @@ class ParsingWorker(QObject):
         self.text = text
         
     def parse_text(self):
-        self.sequence =  []
+        self.sequence =  {'Normal': [], 'Modulation':[]}
         self.steadystatedict = hardwareConfiguration.ddsDict
         #tic = time.clock()
         defs,reducedtext =  self.findAndReplace(self.defpattern,self.text,re.DOTALL)
@@ -78,7 +78,6 @@ class ParsingWorker(QObject):
         self.parsePulses(reducedtext)
         #toc = time.clock()
         #print 'Parsing time:                  ',toc-tic
-        self.parsing_done_trigger.emit(self.sequence,self.seqID)
         self.get_binary_repres()
         
 
@@ -162,6 +161,8 @@ class ParsingWorker(QObject):
             pulseparameters,line = self.findAndReplace(self.pulsepattern,line.strip())
             if mode[0] == 'Normal':
                 self.makeNormalPulse(name,0,pulseparameters)
+            elif mode[0] == 'Modulation':
+                self.makeModulationPulse(name,1,pulseparameters)
 
     def makeNormalPulse(self,name,mode,parameters):
         from labrad.units import WithUnit
@@ -169,8 +170,7 @@ class ParsingWorker(QObject):
         __phase = WithUnit(0,"deg")
         __ramprate = WithUnit(0,'MHz')
         __ampramp = WithUnit(0,'dBm')
-        
-        
+            
         for desig,value,unit in parameters:
             if   desig == 'do':
                 try:
@@ -192,12 +192,53 @@ class ParsingWorker(QObject):
                     __amp = WithUnit(float(value),unit)
                 except ValueError:
                     __amp = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-        self.sequence.append((name[0],__begin,__dur,__freq,__amp,__phase,__ramprate,__ampramp,mode))
+        self.sequence['Normal'].append((name[0],__begin,__dur,__freq,__amp,__phase,__ramprate,__ampramp,mode))
+    
+    def makeModulationPulse(self,name,mode,parameters):
+        from labrad.units import WithUnit
+        print 'got here'
+        __freq, __amp, __begin, __dur, __excur, __modfreq = [0]*6
+        __phase = WithUnit(0,"deg")
+        for desig,value,unit in parameters:
+            if   desig == 'do':
+                try:
+                    __freq = WithUnit(float(value),unit)
+                except ValueError:
+                    __freq = WithUnit(eval('self.'+value.split()[1].strip()),unit) 
+            elif desig == 'at':
+                try:
+                    __begin = WithUnit(float(value),unit)
+                except ValueError:
+                    __begin = WithUnit(eval('self.'+value.split()[1].strip()),unit)
+            elif desig == 'for':
+                try:
+                    __dur = WithUnit(float(value),unit)
+                except ValueError:
+                    __dur = WithUnit(eval('self.'+value.split()[1].strip()),unit)
+            elif desig == 'with':
+                try:
+                    __amp = WithUnit(float(value),unit)
+                except ValueError:
+                    __amp = WithUnit(eval('self.'+value.split()[1].strip()),unit)
+            elif desig == 'modfreq':
+                try:
+                    __modfreq = WithUnit(float(value),unit)
+                except ValueError:
+                    __modfreq = WithUnit(eval('self.'+value.split()[1].strip()),unit)
+            elif desig == 'modexcur':
+                try:
+                    __excur = WithUnit(float(value),unit)
+                except ValueError:
+                    __excur = WithUnit(eval('self.'+value.split()[1].strip()),unit)
+        print name
+        self.sequence['Modulation'].append((name[0],__begin,__dur,__freq,__amp,__phase,__excur,__modfreq,mode))
+    
     
     
     def get_binary_repres(self):
         seqObject = Sequence(self.steadystatedict)
-        seqObject.addDDSStandardPulses(self.sequence)
+        seqObject.addDDSStandardPulses(self.sequence['Normal'])
+        seqObject.addDDSFreqModPulses(self.sequence['Modulation'])
         tic = time.clock()
         binary,ttl = seqObject.progRepresentation()
         toc = time.clock()
@@ -209,7 +250,7 @@ class ParsingWorker(QObject):
             print e
         finally:
             self.mutex.unlock()
-            self.new_sequence_trigger.emit(self.sequence)
+            self.new_sequence_trigger.emit(self.sequence['Normal']+self.sequence['Modulation'])
 
     def get_sequence(self):
         if self.mutex.tryLock(1):
@@ -290,7 +331,6 @@ class Sequence():
             self.ttlProgram = self.parseTTL()
             fullbinary = None
             metablockcounter = 0
-            print self.ddsSettings
             for name, pulsebinary in self.ddsSettings.iteritems():
                 addresse = self.ddsDict[name].channelnumber
                 blocklist = [pulsebinary[i:i+16] for i in range(0, len(pulsebinary), 16)]
@@ -413,7 +453,9 @@ class Sequence():
         '''
         input in the form of a list [(name, start, duration, frequency, amplitude, phase, freq_deviation, mod_freq,mode)]
         '''
-        for value in values:
+        for i in range(len(values)):
+            value = values[i]
+            
             mode = value[-1]
             if mode != 1:
                 raise Exception('Wrong mode pulse detected')
@@ -439,7 +481,13 @@ class Sequence():
         '''
         input in the form of a list [(name, start, duration, frequency, amplitude, phase, ramp_rate, amp_ramp_rate,mode)]
         '''
-        for value in values:
+        value = sorted(values, key = lambda x: (x[0], x[1]))
+        for i in range(len(values)):
+            value = values[i]
+            if i < len(values)-1:
+                nextvalue = values[i+1]
+            else:
+                nextvalue = None
             mode = value[-1]
             if mode != 0:
                 raise Exception('Wrong mode pulse detected')
