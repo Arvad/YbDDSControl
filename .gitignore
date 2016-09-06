@@ -2,3 +2,4 @@
 clients/sequencescripts/
 servers/Pulser/hardwareConfiguration.py
 LabRAD.ini
+clients/testparse.py

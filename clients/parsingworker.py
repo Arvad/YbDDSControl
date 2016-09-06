@@ -24,7 +24,7 @@ class ParsingWorker(QObject):
         self.text = text
         self.reactor = reactor
         self.connection = connection
-        self.sequence = {'Normal': [], 'Modulation':[]}
+        self.sequence = []
         self.defineRegexPatterns()
         self.start.connect(self.run)
         self.connectedsignal =False
@@ -60,7 +60,7 @@ class ParsingWorker(QObject):
         self.text = text
         
     def parse_text(self):
-        self.sequence =  {'Normal': [], 'Modulation':[]}
+        self.sequence =  []
         self.steadystatedict = hardwareConfiguration.ddsDict
         #tic = time.clock()
         defs,reducedtext =  self.findAndReplace(self.defpattern,self.text,re.DOTALL)
@@ -192,11 +192,10 @@ class ParsingWorker(QObject):
                     __amp = WithUnit(float(value),unit)
                 except ValueError:
                     __amp = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-        self.sequence['Normal'].append((name[0],__begin,__dur,__freq,__amp,__phase,__ramprate,__ampramp,mode))
+        self.sequence.append((name[0],__begin,__dur,__freq,__amp,__phase,__ramprate,__ampramp,mode))
     
     def makeModulationPulse(self,name,mode,parameters):
         from labrad.units import WithUnit
-        print 'got here'
         __freq, __amp, __begin, __dur, __excur, __modfreq = [0]*6
         __phase = WithUnit(0,"deg")
         for desig,value,unit in parameters:
@@ -230,15 +229,13 @@ class ParsingWorker(QObject):
                     __excur = WithUnit(float(value),unit)
                 except ValueError:
                     __excur = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-        print name
-        self.sequence['Modulation'].append((name[0],__begin,__dur,__freq,__amp,__phase,__excur,__modfreq,mode))
+        self.sequence.append((name[0],__begin,__dur,__freq,__amp,__phase,__excur,__modfreq,mode))
     
     
     
     def get_binary_repres(self):
         seqObject = Sequence(self.steadystatedict)
-        seqObject.addDDSStandardPulses(self.sequence['Normal'])
-        seqObject.addDDSFreqModPulses(self.sequence['Modulation'])
+        seqObject.addDDSPulses(self.sequence)
         tic = time.clock()
         binary,ttl = seqObject.progRepresentation()
         toc = time.clock()
@@ -250,7 +247,7 @@ class ParsingWorker(QObject):
             print e
         finally:
             self.mutex.unlock()
-            self.new_sequence_trigger.emit(self.sequence['Normal']+self.sequence['Modulation'])
+            self.new_sequence_trigger.emit(self.sequence)
 
     def get_sequence(self):
         if self.mutex.tryLock(1):
@@ -448,55 +445,30 @@ class Sequence():
                 buf = self._intToBuf_coherent(num)
             prog[name] += buf
             
-            
-    def addDDSFreqModPulses(self, values):
+
+    def addDDSPulses(self,values):
         '''
-        input in the form of a list [(name, start, duration, frequency, amplitude, phase, freq_deviation, mod_freq,mode)]
-        '''
-        for i in range(len(values)):
-            value = values[i]
-            
-            mode = value[-1]
-            if mode != 1:
-                raise Exception('Wrong mode pulse detected')
-            try:
-                name,start,dur,freq,ampl = value
-                phase  = 0.0
-            except ValueError:
-                name,start,dur,freq,ampl,phase, freq_deviation, mod_freq, mode = value
-            try:
-                channel = self.ddsDict[name]
-            except KeyError:
-                raise Exception("Unknown DDS channel {}".format(name))
-            start = start['s']
-            dur = dur['s']
-            freq = freq['MHz']
-            ampl = ampl['dBm']
-            phase = phase['deg']
-            freq_deviation = freq_deviation['MHz']
-            mod_freq = mod_freq['MHz']
-            self.addDDSPulse([name,start,dur,freq,ampl,phase,freq_deviation,mod_freq,mode])
-    
-    def addDDSStandardPulses(self, values):
-        '''
-        input in the form of a list [(name, start, duration, frequency, amplitude, phase, ramp_rate, amp_ramp_rate,mode)]
+        input in the form of a list:
+        Modulation pules : [(name, start, duration, frequency, amplitude, phase, freq_deviation, mod_freq,mode)]
+        Normal  pulses   : [(name, start, duration, frequency, amplitude, phase, ramp_rate, amp_ramp_rate,mode)]
         '''
         value = sorted(values, key = lambda x: (x[0], x[1]))
         for i in range(len(values)):
             value = values[i]
             if i < len(values)-1:
                 nextvalue = values[i+1]
+                nextname = nextvalue[0]
             else:
                 nextvalue = None
-            mode = value[-1]
-            if mode != 0:
-                raise Exception('Wrong mode pulse detected')
-            try:
-                name,start,dur,freq,ampl = value
-                phase  = 0.0
-                ramprate = 0.0
-            except ValueError:
-                name,start,dur,freq,ampl,phase, ramp_rate, amp_ramp_rate, mode = value
+            name = value[0]
+            if name != nextvalue:
+                nextvalue = None
+
+            name,start,dur,freq,ampl,phase,modespecific1,modespecific2,mode = value
+
+            if nextvalue is not None:
+                nextname,nextstart,nextdur,nextfreq,nextampl,nextphase,nextmodespecific1,nextmodespecific2,nextmode = nextvalue
+
             try:
                 channel = self.ddsDict[name]
             except KeyError:
@@ -504,32 +476,48 @@ class Sequence():
             start = start['s']
             dur = dur['s']
             freq = freq['MHz']
-            ampl = ampl['dBm']
+            ampl = ampl['dBm'] 
             phase = phase['deg']
-            ramp_rate = ramp_rate['MHz']
-            amp_ramp_rate = amp_ramp_rate['dBm']
-            self.addDDSPulse((name,start,dur,freq,ampl,phase,ramp_rate,amp_ramp_rate,mode))
-            
-    def addDDSPulse(self,values):
-        name,start,dur,freq,ampl,phase,ramp_rate_or_freq_deviation,amp_ramp_rate_or_mod_freq,mode = values
-        try:
-            channel = self.ddsDict[name]
-        except KeyError:
-            raise Exception("Unknown DDS channel {}".format(name))
-            
-        freq_off, ampl_off = channel.off_parameters
+
+            if mode == 0: #normal mode
+                modespecific1 = modespecific1['MHz'] #ramp_rate
+                modespecific2 = modespecific2['dBm'] #amp_ramp_rate
+            elif mode == 1: #modulation mode
+                modespecific1 = modespecific1['MHz'] #freq_deviation
+                modespecific2 = modespecific2['MHz'] #modulation_freq
+
+            if nextvalue is not None:
+                nextfreq = nextfreq['MHz']
+                if nextmode == 0: #normal mode
+                    nextmodespecific1 = nextmodespecific1['MHz'] #ramp_rate
+                    nextmodespecific2 = nextmodespecific2['dBm'] #amp_ramp_rate
+                elif nextmode == 1: #modulation mode
+                    nextmodespecific1 = nextmodespecific1['MHz'] #freq_deviation
+                    nextmodespecific2 = nextmodespecific2['MHz'] #modulation_freq
         
+        if nextvalue is not None:
+            freq_off = nextfreq
+            mode_off = nextmode
+            modespecific1_off = nextmodespecific1
+            modespecific2_off = nextmodespecific2
+        else:
+            freq_off, ampl_off = channel.off_parameters
+            mode_off = mode
+            modespecific1_off = modespecific1
+            modespecific2_off = modespecific2
+
         if freq == 0:
             freq, ampl = freq_off,ampl_off
         else:
             self._checkRange('frequency', channel, freq)
             self._checkRange('amplitude', channel, ampl)
-        num = self.settings_to_num(channel, freq, ampl, mode, phase, ramp_rate_or_freq_deviation, amp_ramp_rate_or_mod_freq)
+        num = self.settings_to_num(channel, freq, ampl, mode, phase, modespecific1, modespecific2)
+
         if not channel.phase_coherent_model:
             num_off = self.settings_to_num(channel, freq_off, ampl_off, mode)
         else:
             #note that keeping the frequency the same when switching off to preserve phase coherence
-            num_off = self.settings_to_num(channel, freq, ampl_off, mode,phase, ramp_rate_or_freq_deviation, amp_ramp_rate_or_mod_freq)
+            num_off = self.settings_to_num(channel, freq_off, ampl_off, mode_off,phase, modespecific1_off, modespecific2_off)
             
         #note < sign, because start can not be 0. 
         #this would overwrite the 0 position of the ram, and cause the dds to change before pulse sequence is launched
@@ -542,8 +530,6 @@ class Sequence():
         elif not dur == 0:#0 length pulses are ignored
             self.addDDS(name, start, num, 'start')
             self.addDDS(name, start + dur, num_off, 'stop')
-            
-            
             
 
     def settings_to_num(self, channel, freq, ampl, mode, phase = 0.0, ramp_rate_or_freq_deviation = 0.0, amp_ramp_rate_or_mod_freq = 0.0):

@@ -6,7 +6,7 @@ import time
 
 class PulserWorker(QObject):
 
-    startsignal = pyqtSignal()
+    start = pyqtSignal()
     stopsignal = pyqtSignal()
     loopsignal = pyqtSignal()
     pulsermessages = pyqtSignal(str)
@@ -19,11 +19,13 @@ class PulserWorker(QObject):
         self.parsingworker = parsingworker
         self.connection = connection
         self.sequencestorage = []
-        self.startsignal.connect(self.run)
+        self.start.connect(self.run)
         self.stopsignal.connect(self.stop)
         self.loopsignal.connect(self.loop)
         self.running = False
         self.stopping=False
+        self.cnx = None
+        self.currentannouncement = None
 
     def set_shottime(self,time):
         self.shottime = time
@@ -34,51 +36,38 @@ class PulserWorker(QObject):
 
     def timed_out(self):
         print 'timed out'
-        self.pulsermessages.emit('Pulser: Pulser timed out')
-
-        
-    def do_sequence(self,currentsequence,currentttl,currentannouncement):
-        import labrad
-        tic = time.clock()
-        cnx = labrad.connect()
-        p = cnx.pulser
-        self.pulsermessages.emit('Pulser: Programming:' + str(currentannouncement[1]))
-        p.new_sequence()
-        p.program_dds_and_ttl(currentsequence,currentttl)
-        toc = time.clock()
-        print "programmed ", toc-tic
-        
-        self.pulsermessages.emit('Pulser: Running:' + str(currentannouncement[1]))
-        p.start_single()
-        try:
-            p.wait_sequence_done(timeout=self.shottime)
-            counts = p.get_metablock_counts()
-            
-            
-            p.stop_sequence() #The stop signal stops the loop *if more than one repetition was set, and resets the OKfpga (the ttltimings)
-        except labrad.errors.RequestTimeoutError, e:
-            p.stop_sequence()
-            self.pulsermessages.emit('Pulser: Timed out')
-        else:
-            toc = time.clock()
-            print 'Program and run', toc-tic-0.5
-            self.sequence_done_trigger.emit(currentannouncement)
-            self.pulsermessages.emit('Metablock counts: '+ str(counts[0]))
-        
-        cnx.disconnect()
-        
+        self.pulsermessages.emit('Pulser: Pulser timed out')     
     
     @pyqtSlot()
     def run(self):
         while not self.stopping:
-            currentsequence, currentttl, currentannouncement = self.parsingworker.get_sequence()
-            if None in (currentsequence, currentttl, currentannouncement):
-                time.sleep(0.2)
+            if self.pulser is None:
+                import labrad
+                cnx = labrad.connect()
+                self.pulser = cnx.pulser
             else:
-                self.stopping = True
-                self.do_sequence(currentsequence, currentttl, currentannouncement)
-            
-        self.stopping = False
+                while nextannouncement is None:
+                    time.sleep(0.2)
+                    nextsequence, nextttl, nextannouncement = self.parsingworker.get_sequence()
+                
+                self.pulser.new_sequence()
+                self.program_dds_and_ttl(nextseqeuence,nextttl)
+                self.pulsermessages.emit('Pulser: Running:' + str(nextannouncement[1]))
+                self.pulser.start_single()
+                try:
+                    self.pulser.wait_sequence_done(timeout=self.shottime)
+                    counts = self.pulser.get_metablock_counts()
+                    self.pulser.stop_sequence() #The stop signal stops the loop *if more than one repetition was set, and resets the OKfpga (the ttltimings)
+                except labrad.errors.RequestTimeoutError, e:
+                    self.pulser.stop_sequence()
+                    self.pulsermessages.emit('Pulser: Timed out')
+                else:
+
+                    self.sequence_done_trigger.emit(nextannouncement)
+                    self.pulsermessages.emit('Metablock counts: '+ str(counts[0]))
+        cnx.disconnect()
+        self.pulser = None
+
         
     @pyqtSlot()    
     def loop(self):

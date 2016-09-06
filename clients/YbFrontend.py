@@ -253,7 +253,6 @@ class mainwindow(QtGui.QMainWindow):
         self.pulserworker.moveToThread(self.pulserthread)
         self.pulserworker.pulsermessages.connect(self.messageout)
         self.pulserworker.sequence_done_trigger.connect(self.sendIdtoParameterVault)
-        self.parsingworker.new_sequence_trigger.connect(self.pulserworker.run)
         self.pulserthread.start()
         
         self.pulserworker.set_shottime(0.6) #cycletime of operation
@@ -385,8 +384,8 @@ class mainwindow(QtGui.QMainWindow):
     #################
     def on_Start(self):
         self.parsingworker.add_text(str(self.writingwidget.toPlainText()))
-        print 'starting button clicked'
         self.parsingworker.start.emit()
+        self.pulserworker.start.emit()
 
     def on_Stop(self):
         self.stop_signal.emit()
