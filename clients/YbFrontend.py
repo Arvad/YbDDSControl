@@ -246,7 +246,7 @@ class mainwindow(QtGui.QMainWindow):
         self.stop_signal.connect(self.parsingworker.stop)
         self.parsingthread.start()
         self.parsingworker.set_parameters(self.parameters)
-
+        
     def start_pulserthread(self):
         self.pulserthread = QThread()
         self.pulserworker = PulserWorker(self.reactor,self.connection,self.parsingworker)
@@ -255,7 +255,7 @@ class mainwindow(QtGui.QMainWindow):
         self.pulserworker.sequence_done_trigger.connect(self.sendIdtoParameterVault)
         self.pulserthread.start()
         
-        self.pulserworker.set_shottime(0.6) #cycletime of operation
+        self.pulserworker.set_shottime(1) #cycletime of operation
 
     @inlineCallbacks
     def setupListeners(self):
