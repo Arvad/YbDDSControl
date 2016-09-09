@@ -32,7 +32,7 @@ class DDS(LabradServer):
     @setting(41, "Get DDS Channels", returns = '*s')
     def getDDSChannels(self, c):
         """get the list of available channels"""
-        return self.ddsDict.keys()
+        return  [i[0] for i in sorted(self.ddsDict.items(),key = lambda x: x[1].channelnumber)]
     
     @setting(43, "Amplitude", name= 's', amplitude = 'v[dBm]', returns = 'v[dBm]')
     def amplitude(self, c, name = None, amplitude = None):
