@@ -1,6 +1,5 @@
 from PyQt4 import QtGui
 from PyQt4.QtCore import pyqtSignal, pyqtSlot, QObject
-from twisted.internet.defer import inlineCallbacks
 import numpy as np
 from connection import connection
 import pyqtgraph as pg
@@ -16,15 +15,13 @@ class graphingwidget(QtGui.QWidget):
     update_signal = pyqtSignal(list)
     def __init__(self,reactor, cnx):
         super(graphingwidget,self).__init__()
-        self.reactor = reactor
         self.connection = cnx
         self.initialize()
 
 
-    @inlineCallbacks
     def initialize(self):
-        p = yield self.connection.get_server('Pulser')
-        hwconfigpath = yield p.get_hardwareconfiguration_path()
+        p = self.connection.pulser
+        hwconfigpath = p.get_hardwareconfiguration_path()
         sys.path.append(hwconfigpath)
         global hardwareConfiguration
         from hardwareConfiguration import hardwareConfiguration

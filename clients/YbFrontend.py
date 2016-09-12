@@ -1,7 +1,6 @@
 from PyQt4 import QtGui
 from PyQt4 import QtCore
 from PyQt4.QtCore import pyqtSignal,QThread, QObject, QEventLoop, QWaitCondition, QTimer
-from twisted.internet.defer import inlineCallbacks, Deferred
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvasQTAgg
 import matplotlib.pyplot as plt
 from SWITCH_CONTROL import switchWidget
@@ -11,28 +10,25 @@ from LEDindicator import LEDindicator
 from parsingworker import ParsingWorker
 from pulserworker import PulserWorker
 import time
+import labrad
 
 class mainwindow(QtGui.QMainWindow):
     start_signal = pyqtSignal()
     stop_signal = pyqtSignal()
     
 
-    def __init__(self,reactor, parent=None):
+    def __init__(self, parent=None):
         super(mainwindow,self).__init__()
-        self.reactor = reactor
         self.initialize()
         self.ParamID = None
 
 
-    # This is a seperate function because it needs to 
-    # be able to yield, and __init__ cannot do that
-    @inlineCallbacks
     def initialize(self):
-        yield self.connect_labrad()
-        yield self.create_layout()
+        self.connect_labrad()
+        self.create_layout()
         self.messageout('Layout done')
-        yield self.get_parameters()
-        yield self.start_parserthread()
+        self.get_parameters()
+        self.start_parserthread()
         self.start_pulserthread()
         self.messageout('Parserthread started')
         self.fill_parameterstree()
@@ -44,11 +40,9 @@ class mainwindow(QtGui.QMainWindow):
 
         self.RUNNING = False
 
-    @inlineCallbacks
+    
     def connect_labrad(self):
-        from connection import connection
-        cxn = connection()
-        yield cxn.connect()
+        cxn = labrad.connect()
         self.connection = cxn
         self.context = cxn.context()
        
@@ -93,9 +87,6 @@ class mainwindow(QtGui.QMainWindow):
         exitAction.triggered.connect(self.closeEvent)
         fileMenu = menubar.addMenu('&File')
         fileMenu.addAction(exitAction)
-
-    def closeEvent(self,event):
-        self.reactor.stop()
   
     #################
     # Spectrum plotting tab panel
@@ -116,13 +107,13 @@ class mainwindow(QtGui.QMainWindow):
         from LINETRIGGER_CONTROL import linetriggerWidget
 
         layout = QtGui.QVBoxLayout()
-        try:
-            pass
+        #try:
+        #    pass
             #layout.addWidget(switchWidget(self.reactor,self.connection))
-            layout.addWidget(DDS_CONTROL(self.reactor,self.connection))
-            layout.addWidget(linetriggerWidget(self.reactor,self.connection))
-        except AttributeError, e:
-            print e
+        #    layout.addWidget(DDS_CONTROL(self.reactor,self.connection))
+        #    layout.addWidget(linetriggerWidget(self.reactor,self.connection))
+        #except AttributeError, e:
+        #    print e
         widget.setLayout(layout)
         return widget
 
@@ -152,7 +143,7 @@ class mainwindow(QtGui.QMainWindow):
         string = "Channel DDS_4 do 200 MHz with 9 dBm for 100 ms at 0.01 ms in mode Normal\nChannel DDS_2 do 200 MHz with 9 dBm for 100 ms at 0.01 ms in mode Normal"
         #string += "Channel DDS_2 do 10  MHz with -10 dBm for 1 ms at 700 ms in mode Normal\n"
         
-        self.graphingwidget = graphingwidget(self.reactor,self.connection)
+        self.graphingwidget = graphingwidget(self.connection)
         self.writingwidget = QtGui.QTextEdit('Writingbox')
         self.writingwidget.setPlainText(string)
 
@@ -231,13 +222,12 @@ class mainwindow(QtGui.QMainWindow):
 #########                and connect signals                   #########
 #########                                                      #########
 ########################################################################
-    @inlineCallbacks
+    
     def start_parserthread(self):
-        p = yield self.connection.get_server('Pulser')
-        hwconfigpath = yield p.get_hardwareconfiguration_path()
-        print hwconfigpath
+        p = self.connection.Pulser
+        hwconfigpath = p.get_hardwareconfiguration_path()
         self.parsingthread = QThread()
-        self.parsingworker = ParsingWorker(hwconfigpath,str(self.writingwidget.toPlainText()),self.reactor,self.connection,self.context)
+        self.parsingworker = ParsingWorker(hwconfigpath,str(self.writingwidget.toPlainText()),self.context)
         self.parsingworker.moveToThread(self.parsingthread)
         self.parsingworker.busy_trigger.connect(self.ledparsing.setState)
         self.parsingworker.trackingparameterserver.connect(self.ledtracking.setState)
@@ -249,7 +239,7 @@ class mainwindow(QtGui.QMainWindow):
 
     def start_pulserthread(self):
         self.pulserthread = QThread()
-        self.pulserworker = PulserWorker(self.reactor,self.connection,self.parsingworker)
+        self.pulserworker = PulserWorker(self.connection,self.parsingworker)
         self.pulserworker.moveToThread(self.pulserthread)
         self.pulserworker.pulsermessages.connect(self.messageout)
         self.pulserworker.sequence_done_trigger.connect(self.sendIdtoParameterVault)
@@ -257,12 +247,12 @@ class mainwindow(QtGui.QMainWindow):
         
         self.pulserworker.set_shottime(0.6) #cycletime of operation
 
-    @inlineCallbacks
+    
     def setupListeners(self):
         SIGNALID = 115687
-        pv = yield self.connection.get_server('ParameterVault')
-        yield pv.signal__parameter_change(SIGNALID+10)
-        yield pv.addListener(listener = self.parameter_change,
+        pv = self.connection.ParameterVault
+        pv.signal__parameter_change(SIGNALID+10)
+        pv.addListener(listener = self.parameter_change,
                                  ID = SIGNALID+10)
 
     def fill_parameterstree(self):
@@ -297,7 +287,7 @@ class mainwindow(QtGui.QMainWindow):
         self.Messagebox.insertPlainText("\n"+stamp+" - "+text)
         self.Messagebox.moveCursor(QtGui.QTextCursor.End)
 
-    @inlineCallbacks
+    
     def done_parsing(self,sequence,parameterID):
         self.ledprogramming.setOn()
         #server = yield self.connection.get_server('Pulser')
@@ -316,11 +306,11 @@ class mainwindow(QtGui.QMainWindow):
     #################
     #Line triggering
     #################    
-    @inlineCallbacks
+    
     def toggle_linetrig(self):
         state = self.sender().isChecked()
-        server = yield self.connection.get_server('Pulser')
-        yield server.line_trigger_state(state)
+        server = self.connection.Pulser
+        server.line_trigger_state(state)
         if state:
             self.ledlinetrigger.setOn()
         else:
@@ -332,11 +322,11 @@ class mainwindow(QtGui.QMainWindow):
     #and update the parameter editor
     #################
 
-    @inlineCallbacks
+    
     def parameter_change(self,signal,info):
         collection, name = info
-        pv = yield self.connection.get_server('ParameterVault')
-        val = yield pv.get_parameter(collection,name)
+        pv =self.connection.ParameterVault
+        val =pv.get_parameter(collection,name)
         self.parsingworker.update_parameters(collection,name,val)
         self.parameters[collection][name] = val
         try:
@@ -347,26 +337,26 @@ class mainwindow(QtGui.QMainWindow):
         #self.messageout('New Value from Parameter Vault\n {:} = {:}'.format(name,val))
 
 
-    @inlineCallbacks
+    
     def get_parameters(self):
         try:
-            pv = yield self.connection.get_server('ParameterVault')
+            pv = self.connection.ParameterVault
             coldict = {}
-            collections = yield pv.get_collections()
+            collections = pv.get_collections()
             for acol in collections:
                 coldict[acol] = {}
-                names = yield pv.get_parameter_names(acol)
+                names = pv.get_parameter_names(acol)
                 for aname in names:
-                    coldict[acol][aname] = yield pv.get_parameter(acol,aname)
+                    coldict[acol][aname] = pv.get_parameter(acol,aname)
             self.parameters = coldict
         except Exception, e:
             print repr(e)
         
-    @inlineCallbacks
+    
     def sendIdtoParameterVault(self,completedannouncement):
         self.paramID = completedannouncement[1]
-        pv = yield self.connection.get_server('ParameterVault')
-        yield pv.set_parameter('Raman','confirm',completedannouncement)
+        pv = self.connection.ParameterVault
+        pv.set_parameter('Raman','confirm',completedannouncement)
         #print 'time updated id: ',time.time()
         self.messageout('Completed shot: {:}'.format(completedannouncement[1]))
 
@@ -443,10 +433,10 @@ class mainwindow(QtGui.QMainWindow):
 
 if __name__== '__main__':
     app = QtGui.QApplication( [])
-    import qt4reactor
-    qt4reactor.install()
-    from twisted.internet import reactor
-    widget = mainwindow(reactor)
+    #import qt4reactor
+    #qt4reactor.install()
+    #from twisted.internet import reactor
+    widget = mainwindow()
     widget.showMaximized()
     widget.show()
     reactor.run()

@@ -1,5 +1,4 @@
 from PyQt4.QtCore import QThread, pyqtSignal, QObject, pyqtSlot, QMutex, QMutexLocker
-from twisted.internet.defer import inlineCallbacks, returnValue  
 import re
 import time
 import numpy as np
@@ -19,11 +18,9 @@ class ParsingWorker(QObject):
     new_sequence_trigger = pyqtSignal(list)
 
 
-    def __init__(self,hwconfigpath,text,reactor,connection,cntx):
+    def __init__(self,hwconfigpath,text,cntx):
         super(ParsingWorker,self).__init__()
         self.text = text
-        self.reactor = reactor
-        self.connection = connection
         self.sequence = []
         self.defineRegexPatterns()
         self.start.connect(self.run)

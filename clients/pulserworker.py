@@ -1,5 +1,4 @@
 from PyQt4.QtCore import QThread, pyqtSignal, QObject, pyqtSlot, QTimer
-from twisted.internet.defer import inlineCallbacks
 
 import time
 
@@ -12,10 +11,9 @@ class PulserWorker(QObject):
     pulsermessages = pyqtSignal(str)
     sequence_done_trigger = pyqtSignal(tuple)
 
-    def __init__(self,reactor,connection,parsingworker):
+    def __init__(self,connection,parsingworker):
         
         super(PulserWorker,self).__init__()
-        self.reactor = reactor
         self.parsingworker = parsingworker
         self.connection = connection
         self.sequencestorage = []
@@ -26,6 +24,7 @@ class PulserWorker(QObject):
         self.stopping=False
         self.cnx = None
         self.currentannouncement = None
+        self.pulser = connection().Pulser
 
     def set_shottime(self,time):
         self.shottime = time
@@ -41,32 +40,25 @@ class PulserWorker(QObject):
     @pyqtSlot()
     def run(self):
         while not self.stopping:
-            if self.pulser is None:
-                import labrad
-                cnx = labrad.connect()
-                self.pulser = cnx.pulser
+            while nextannouncement is None:
+                time.sleep(0.2)
+                nextsequence, nextttl, nextannouncement = self.parsingworker.get_sequence()
+            
+            self.pulser.new_sequence()
+            self.program_dds_and_ttl(nextseqeuence,nextttl)
+            self.pulsermessages.emit('Pulser: Running:' + str(nextannouncement[1]))
+            self.pulser.start_single()
+            try:
+                self.pulser.wait_sequence_done(timeout=self.shottime)
+                counts = self.pulser.get_metablock_counts()
+                self.pulser.stop_sequence() #The stop signal stops the loop *if more than one repetition was set, and resets the OKfpga (the ttltimings)
+            except labrad.errors.RequestTimeoutError, e:
+                self.pulser.stop_sequence()
+                self.pulsermessages.emit('Pulser: Timed out')
             else:
-                while nextannouncement is None:
-                    time.sleep(0.2)
-                    nextsequence, nextttl, nextannouncement = self.parsingworker.get_sequence()
-                
-                self.pulser.new_sequence()
-                self.program_dds_and_ttl(nextseqeuence,nextttl)
-                self.pulsermessages.emit('Pulser: Running:' + str(nextannouncement[1]))
-                self.pulser.start_single()
-                try:
-                    self.pulser.wait_sequence_done(timeout=self.shottime)
-                    counts = self.pulser.get_metablock_counts()
-                    self.pulser.stop_sequence() #The stop signal stops the loop *if more than one repetition was set, and resets the OKfpga (the ttltimings)
-                except labrad.errors.RequestTimeoutError, e:
-                    self.pulser.stop_sequence()
-                    self.pulsermessages.emit('Pulser: Timed out')
-                else:
 
-                    self.sequence_done_trigger.emit(nextannouncement)
-                    self.pulsermessages.emit('Metablock counts: '+ str(counts[0]))
-        cnx.disconnect()
-        self.pulser = None
+                self.sequence_done_trigger.emit(nextannouncement)
+                self.pulsermessages.emit('Metablock counts: '+ str(counts[0]))
 
         
     @pyqtSlot()    
