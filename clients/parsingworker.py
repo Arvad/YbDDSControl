@@ -1,5 +1,6 @@
 from PyQt4.QtCore import QThread, pyqtSignal, QObject, pyqtSlot, QMutex, QMutexLocker
 from twisted.internet.defer import inlineCallbacks, returnValue  
+import threading
 import re
 import time
 import numpy as np
@@ -24,6 +25,7 @@ class ParsingWorker(QObject):
         self.text = text
         self.reactor = reactor
         self.connection = connection
+        self.context = cntx
         self.sequence = []
         self.defineRegexPatterns()
         self.start.connect(self.run)
@@ -33,29 +35,31 @@ class ParsingWorker(QObject):
         self.seqID = 0
         self.Busy = False
         self.sequencestorage = []
+        self.parameters = {}
         self.mutex = QMutex()
         self.steadystatedict = None
         self.lastannouncement = (0L,0L,0,0L,False,0.0,0.0,0.0)
         sys.path.append(hwconfigpath)
         global hardwareConfiguration
         from hardwareConfiguration import hardwareConfiguration
-
+    
+    
     def set_parameters(self,paramdict):
         self.parameters = paramdict
-
-    def update_parameters(self,collection,name,value):
-        pv = yield self.connection.get_server('Parameter Vault')
-        value = yield pv.get_parameter('Raman','announce')
+        
+    def update_parameters(self, value):
+        print 'value: ',value
         self.lastannouncement = value
         self.seqID = value[1]
-        self.parameters['Raman']['A'] = value[5]
-        self.parameters['Raman']['B'] = value[6]
-        self.parameters['Raman']['C'] = value[7]
+        self.parameters['A'] = value[5]
+        self.parameters['B'] = value[6]
+        self.parameters['C'] = value[7]
 
     def add_text(self,text):
         self.text = text
         
     def parse_text(self):
+        print "started parsing"
         self.sequence =  []
         self.steadystatedict = hardwareConfiguration.ddsDict
         #tic = time.clock()
@@ -224,12 +228,13 @@ class ParsingWorker(QObject):
     
     
     def get_binary_repres(self):
+        self.new_sequence_trigger.emit(self.sequence)
         seqObject = Sequence(self.steadystatedict)
         seqObject.addDDSPulses(self.sequence)
         tic = time.clock()
         binary,ttl = seqObject.progRepresentation()
         
-        return (binary,ttl,self.lastannouncement)
+        return (str(binary),str(ttl),self.seqID)
                 
 
     @pyqtSlot()
@@ -244,11 +249,14 @@ class ParsingWorker(QObject):
         self.sequencestorage = []
         
     @pyqtSlot()
-    def run(self):
-        self.update_parameters()
+    def run(self,text,value):
+        self.text = text
+        self.update_parameters(value)
+        #yield self.update_parameters()
+        print "ID: ", self.seqID
         self.parse_text()
         package = self.get_binary_repres()
-        returnValue(package)
+        return package
         
 class Sequence():
     """Sequence for programming pulses"""

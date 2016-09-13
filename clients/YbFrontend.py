@@ -23,6 +23,7 @@ class mainwindow(QtGui.QMainWindow):
         self.reactor = reactor
         self.initialize()
         self.ParamID = None
+        self.text = ""
 
 
     # This is a seperate function because it needs to 
@@ -33,11 +34,11 @@ class mainwindow(QtGui.QMainWindow):
         yield self.create_layout()
         self.messageout('Layout done')
         yield self.get_parameters()
-        yield self.start_parserthread()
-        self.start_pulserthread()
+        self.start_parserthread()
+        #self.start_pulserthread()
         self.messageout('Parserthread started')
         self.fill_parameterstree()
-        self.setupListeners()
+        #self.setupListeners()
         self.messageout('Listeners setup')
         self.messageout('-------------------')
         self.messageout('Initialization done')
@@ -52,6 +53,7 @@ class mainwindow(QtGui.QMainWindow):
         yield cxn.connect()
         self.connection = cxn
         self.context = cxn.context()
+        print self.connection
         p = yield self.connection.get_server('Pulser')
         self.hwconfigpath = yield p.get_hardwareconfiguration_path()
        
@@ -147,10 +149,11 @@ class mainwindow(QtGui.QMainWindow):
     # Sqeuence tab panel
     #################
     def makeSequenceWidget(self):
+        from graphingwidget import graphingwidget
         self.filename = None
         splitterwidget = QtGui.QSplitter()
         string = "Channel DDS_4 do 200 MHz with 9 dBm for 100 ms at 0.01 ms in mode Normal\nChannel DDS_2 do 200 MHz with 9 dBm for 100 ms at 0.01 ms in mode Normal"        
-        self.graphingwidget = makeGraphingwidget(self.reactor,self.hwconfigpath)
+        self.graphingwidget = graphingwidget(self.reactor,self.hwconfigpath)
         self.writingwidget = QtGui.QTextEdit('Writingbox')
         self.writingwidget.setPlainText(string)
 
@@ -229,7 +232,7 @@ class mainwindow(QtGui.QMainWindow):
 #########                and connect signals                   #########
 #########                                                      #########
 ########################################################################
-    @inlineCallbacks
+    
     def start_parserthread(self):
         
         #self.parsingthread = QThread()
@@ -238,7 +241,7 @@ class mainwindow(QtGui.QMainWindow):
         self.parsingworker.busy_trigger.connect(self.ledparsing.setState)
         #self.parsingworker.trackingparameterserver.connect(self.ledtracking.setState)
         self.parsingworker.parsermessages.connect(self.messageout)
-        #self.parsingworker.new_sequence_trigger.connect(self.graphingwidget.do_sequence)
+        self.parsingworker.new_sequence_trigger.connect(self.graphingwidget.do_sequence)
         self.stop_signal.connect(self.parsingworker.stop)
         #self.parsingthread.start()
         #self.parsingworker.set_parameters(self.parameters)
@@ -379,14 +382,16 @@ class mainwindow(QtGui.QMainWindow):
     #Start and stop buttons
     #################
     def on_Start(self):
-        self.parsingworker.add_text(str(self.writingwidget.toPlainText()))
         #elf.parsingworker.start.emit()
         #self.pulserworker.start.emit()
+        self.text = str(self.writingwidget.toPlainText())
+        self.stopping = False
         self.run()
 
     def on_Stop(self):
-        self.stop_signal.emit()
-        self.pulserworker.stopsignal.emit()
+        self.stopping = True
+        #self.stop_signal.emit()
+        #self.pulserworker.stopsignal.emit()
         
     def on_Loop(self):
         self.pulserworker.loopsignal.emit()
@@ -437,29 +442,37 @@ class mainwindow(QtGui.QMainWindow):
                     self.savebuttonclick()
         self.writingwidget.clear()
 
-
+    @inlineCallbacks
     def run(self):
-        d = threads.deferToThread(self.parsingworker.run)
-        d.addCallback(do_sequence)
+        pv = yield self.connection.get_server('ParameterVault')
+        value = yield pv.get_parameter('Raman','announce')
+        d = threads.deferToThread(self.parsingworker.run,self.text,value)
+        d.addCallback(self.do_sequence)
 
     @inlineCallbacks
     def do_sequence(self,packet):
-        binary,ttl,lastannouncement = packet
-        pulser = self.connection.get_server('Pulser')
+        print "started doing"
+        binary,ttl,seqID = packet
+        pulser = yield self.connection.get_server('Pulser')
         yield pulser.new_sequence()
-        yield pulser.program_dds_and_ttl(str(binary),str(ttl))
-        self.messageout('Pulser running: '+str(lastannouncement[1]))
+        yield pulser.program_dds_and_ttl(binary,ttl)
+        self.messageout('Pulser running: '+str(seqID))
         yield pulser.start_single()
-        d = threads.deferToThread(self.parsingworker.run)
-        d.addCallback(do_sequence)
+        if not self.stopping:
+            pv = yield self.connection.get_server('ParameterVault')
+            value = yield pv.get_parameter('Raman','announce')         
+            d = threads.deferToThread(self.parsingworker.run,self.text,value)
+            d.addCallback(self.do_sequence)
         completed = yield pulser.wait_sequence_done(1)
         if completed:
             counts = yield pulser.get_metablock_counts()
             yield pulser.stop_sequence()
             self.messageout('Metablock counts: '+ str(counts[0]))
+            
         else:
             yield pulser.stop_sequence()
             self.messageout('Pulser: Timed out')
+            
 
 
 
@@ -469,6 +482,6 @@ if __name__== '__main__':
     qt4reactor.install()
     from twisted.internet import reactor
     widget = mainwindow(reactor)
-    widget.showMaximized()
+    #widget.showMaximized()
     widget.show()
     reactor.run()

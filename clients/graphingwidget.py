@@ -21,7 +21,6 @@ class graphingwidget(QtGui.QWidget):
         self.initialize()
 
 
-    @inlineCallbacks
     def initialize(self):
         sys.path.append(self.configpath)
         global hardwareConfiguration
