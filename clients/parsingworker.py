@@ -34,9 +34,9 @@ class ParsingWorker(QObject):
         self.Busy = False
         self.sequencestorage = []
         self.mutex = QMutex()
-        sys.path.append(hwconfigpath)
         self.steadystatedict = None
         self.lastannouncement = (0L,0L,0,0L,False,0.0,0.0,0.0)
+        sys.path.append(hwconfigpath)
         global hardwareConfiguration
         from hardwareConfiguration import hardwareConfiguration
 
@@ -44,17 +44,13 @@ class ParsingWorker(QObject):
         self.parameters = paramdict
 
     def update_parameters(self,collection,name,value):
-        if collection == "Raman" and name=="announce":
-            self.lastannouncement = value
-            self.seqID = value[1]
-            self.parameters['Raman']['A'] = value[5]
-            self.parameters['Raman']['B'] = value[6]
-            self.parameters['Raman']['C'] = value[7]
-        else:
-            self.parameters[collection][name] = value
-
-        if self.tracking:
-            self.run()
+        pv = yield self.connection.get_server('Parameter Vault')
+        value = yield pv.get_parameter('Raman','announce')
+        self.lastannouncement = value
+        self.seqID = value[1]
+        self.parameters['Raman']['A'] = value[5]
+        self.parameters['Raman']['B'] = value[6]
+        self.parameters['Raman']['C'] = value[7]
 
     def add_text(self,text):
         self.text = text
@@ -64,12 +60,6 @@ class ParsingWorker(QObject):
         self.steadystatedict = hardwareConfiguration.ddsDict
         #tic = time.clock()
         defs,reducedtext =  self.findAndReplace(self.defpattern,self.text,re.DOTALL)
-        if any(["ParameterVault" in d for d in defs]):
-            self.tracking = True
-            self.trackingparameterserver.emit(self.tracking)
-        elif self.tracking == True:
-            self.tracking = False
-            self.trackingparameterserver.emit(self.tracking) 
         loops,reducedtext = self.findAndReplace(self.looppattern,reducedtext,re.DOTALL)
         steadys,reducedtext = self.findAndReplace(self.steadypattern,reducedtext,re.DOTALL)
         self.parseDefine(defs,loops)
@@ -78,7 +68,7 @@ class ParsingWorker(QObject):
         self.parsePulses(reducedtext)
         #toc = time.clock()
         #print 'Parsing time:                  ',toc-tic
-        self.get_binary_repres()
+        
         
 
 
@@ -238,31 +228,10 @@ class ParsingWorker(QObject):
         seqObject.addDDSPulses(self.sequence)
         tic = time.clock()
         binary,ttl = seqObject.progRepresentation()
-        toc = time.clock()
-                
-        self.mutex.lock()
-        try:
-            self.sequencestorage = (str(binary),str(ttl),self.lastannouncement)
-        except Exception,e:
-            print e
-        finally:
-            self.mutex.unlock()
-            self.new_sequence_trigger.emit(self.sequence)
-
-    def get_sequence(self):
-        if self.mutex.tryLock(1):
-            try:
-                currentsequence, currentttl, currentannouncement = self.sequencestorage
-                return currentsequence, currentttl, currentannouncement
-            except Exception,e:
-                print e
-                return None,None,None
-            finally:
-                self.mutex.unlock()
-        else:
-            print 'locked'
-            return None, None, None
         
+        return (binary,ttl,self.lastannouncement)
+                
+
     @pyqtSlot()
     def stop(self):
         self.tracking = False
@@ -276,15 +245,10 @@ class ParsingWorker(QObject):
         
     @pyqtSlot()
     def run(self):
-        tic = time.clock()
-        self.Busy = True
-        self.busy_trigger.emit(self.Busy)
+        self.update_parameters()
         self.parse_text()
-        toc = time.clock()
-        print 'Parsed ',toc-tic
-        self.parsermessages.emit('Parser: Parsing done')
-        self.Busy = False
-        self.busy_trigger.emit(self.Busy)            
+        package = self.get_binary_repres()
+        returnValue(package)
         
 class Sequence():
     """Sequence for programming pulses"""

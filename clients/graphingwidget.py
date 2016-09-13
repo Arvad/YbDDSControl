@@ -14,18 +14,16 @@ class graphingwidget(QtGui.QWidget):
 
     SIGNALID = 104692
     update_signal = pyqtSignal(list)
-    def __init__(self,reactor, cnx):
+    def __init__(self,reactor, configpath):
         super(graphingwidget,self).__init__()
         self.reactor = reactor
-        self.connection = cnx
+        self.configpath = configpath
         self.initialize()
 
 
     @inlineCallbacks
     def initialize(self):
-        p = yield self.connection.get_server('Pulser')
-        hwconfigpath = yield p.get_hardwareconfiguration_path()
-        sys.path.append(hwconfigpath)
+        sys.path.append(self.configpath)
         global hardwareConfiguration
         from hardwareConfiguration import hardwareConfiguration
         self.ddslist = hardwareConfiguration.ddsDict
