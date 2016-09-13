@@ -26,6 +26,8 @@ class mainwindow(QtGui.QMainWindow):
         self.ParamID = None
         self.text = ""
         self.hardwarelock = False
+        self.shottimevalue
+        self.updatedelayvalue
 
 
     # This is a seperate function because it needs to 
@@ -35,18 +37,9 @@ class mainwindow(QtGui.QMainWindow):
         yield self.connect_labrad()
         yield self.create_layout()
         self.messageout('Layout done')
-        yield self.get_parameters()
-        self.start_parserthread()
-        #self.start_pulserthread()
-        self.messageout('Parserthread started')
-        self.fill_parameterstree()
-        #self.setupListeners()
-        self.messageout('Listeners setup')
-        self.messageout('-------------------')
+        self.setup_parser()
         self.messageout('Initialization done')
         
-
-        self.RUNNING = False
 
     @inlineCallbacks
     def connect_labrad(self):
@@ -72,7 +65,6 @@ class mainwindow(QtGui.QMainWindow):
     def create_layout(self):
         controlwidget = self.makeControlWidget()
         sequencewidget = self.makeSequenceWidget()
-        parameterswidget = self.makeParameterWidget()
         spectrumplottingwidget = self.makeSpectrumPlottingWidget()
         centralwidget = QtGui.QWidget()
         tabwidget = QtGui.QTabWidget()
@@ -87,19 +79,7 @@ class mainwindow(QtGui.QMainWindow):
         centralwidget.setLayout(layout)
 
         self.setWindowTitle('Frontend')
-        self.create_menubar()
-        self.statusBar().showMessage('Ready')
         self.setCentralWidget(centralwidget)
-
-    def create_menubar(self):
-        menubar = self.menuBar()
-
-        exitAction = QtGui.QAction(QtGui.QIcon('exit.png'), '&Exit', self)
-        exitAction.setShortcut('Ctrl+Q')
-        exitAction.setStatusTip('Exit application')
-        exitAction.triggered.connect(self.closeEvent)
-        fileMenu = menubar.addMenu('&File')
-        fileMenu.addAction(exitAction)
 
     def closeEvent(self,event):
         self.reactor.stop()
@@ -130,20 +110,6 @@ class mainwindow(QtGui.QMainWindow):
             layout.addWidget(linetriggerWidget(self.reactor,self.connection))
         except AttributeError, e:
             print e
-        widget.setLayout(layout)
-        return widget
-
-    #################
-    # Parameter tab panel
-    #################
-    def makeParameterWidget(self):
-        widget = QtGui.QWidget()
-        self.parametertree = QtGui.QTreeWidget()
-        self.parametertree.setColumnCount(2)
-        self.parametertree.header().setResizeMode(0,QtGui.QHeaderView.ResizeToContents)
-        self.parametertree.header().setResizeMode(1,QtGui.QHeaderView.ResizeToContents)
-        layout = QtGui.QHBoxLayout()
-        layout.addWidget(self.parametertree)
         widget.setLayout(layout)
         return widget
 
@@ -188,11 +154,29 @@ class mainwindow(QtGui.QMainWindow):
         self.ledlinetrigger = LEDindicator('Ext trig')
         self.ledtracking = LEDindicator('Listening to Param')
         self.ledparsing = LEDindicator('Parse')
+        updatedelay = QtGui.QSpinbox()
+        updatedelaylabel = QtGui.QLabel('Update delay')
+        shottime = QtGui.QSpinbox()
+        shottimelabel = QtGui.QLabel('Shot time')
+        timeoffset = QtGui.QSpinbox()
+        timeoffsetlabel = QtGui.QLabel('Offset')
 
         filetoolbar = QtGui.QToolBar()
         filetoolbar.addAction(QtGui.QIcon('icons/document-open.svg'),'open',self.openbuttonclick)
         filetoolbar.addAction(QtGui.QIcon('icons/document-save.svg'),'save',self.savebuttonclick)
         filetoolbar.addAction(QtGui.QIcon('icons/document-new.svg'),'new',self.newbuttonclick)
+
+        shottimevalue.valueChanged.connect(lambda val: setattr(self,"shottimevalue",val/1000.))
+        updatedelayvalue.valueChanged.connect(lambda val: setattr(self,"updatedelayvalue",val/1000.))
+        timeoffset.valueChanged.connect(self.offset_value_changed)
+
+
+        shottime.setRange(0,3000)
+        updatedelay.setRange(0,3000)
+        shottime.setSuffix('ms')
+        updatedelay.setSuffix('ms')
+        timeoffset.setSuffix('ms')
+        timeoffset.setRange(0,3000)
 
         self.Messagebox = QtGui.QTextEdit()
         self.Messagebox.setReadOnly(True)
@@ -222,7 +206,11 @@ class mainwindow(QtGui.QMainWindow):
         layout.addWidget(ledpanel,0,1,3,1)
         layout.addWidget(LineTrigbutton,3,0)
         layout.addWidget(filetoolbar,4,0)
-        layout.addWidget(self.Messagebox,0,2,5,4)
+        layout.addWidget(self.Messagebox,0,2,7,4)
+        layout.addWidget(updatedelaylabel,5,0)
+        layout.addWidget(shottimelabel,6,0)
+        layout.addWidget(updatedelay,5,1)
+        layout.addWidget(shottime,6,1)
         layout.setSpacing(2)
         layout.setContentsMargins(0,0,0,0)
         panel.setLayout(layout)
@@ -235,51 +223,12 @@ class mainwindow(QtGui.QMainWindow):
 #########                                                      #########
 ########################################################################
     
-    def start_parserthread(self):
-        
-        #self.parsingthread = QThread()
+    def setup_parser(self):
         self.parsingworker = ParsingWorker(self.hwconfigpath,str(self.writingwidget.toPlainText()),self.reactor,self.connection,self.context)
-        #self.parsingworker.moveToThread(self.parsingthread)
         self.parsingworker.busy_trigger.connect(self.ledparsing.setState)
-        #self.parsingworker.trackingparameterserver.connect(self.ledtracking.setState)
         self.parsingworker.parsermessages.connect(self.messageout)
         self.parsingworker.new_sequence_trigger.connect(self.graphingwidget.do_sequence)
-        self.stop_signal.connect(self.parsingworker.stop)
-        #self.parsingthread.start()
-        #self.parsingworker.set_parameters(self.parameters)
         
-    def start_pulserthread(self):
-        self.pulserthread = QThread()
-        self.pulserworker = PulserWorker(self.reactor,self.connection,self.parsingworker)
-        self.pulserworker.moveToThread(self.pulserthread)
-        self.pulserworker.pulsermessages.connect(self.messageout)
-        self.pulserworker.sequence_done_trigger.connect(self.sendIdtoParameterVault)
-        self.pulserthread.start()
-        
-        self.pulserworker.set_shottime(1) #cycletime of operation
-
-    @inlineCallbacks
-    def setupListeners(self):
-        SIGNALID = 115687
-        pv = yield self.connection.get_server('ParameterVault')
-        yield pv.signal__parameter_change(SIGNALID+10)
-        yield pv.addListener(listener = self.parameter_change,
-                                 ID = SIGNALID+10)
-
-    def fill_parameterstree(self):
-        self.parametertree.clear()
-        self.fill_item(self.parametertree.invisibleRootItem(), self.parameters)
-
-    def fill_item(self,item, value):
-        item.setExpanded(False)
-        if type(value) is dict:
-            for key, val in sorted(value.iteritems()):
-                child = QtGui.QTreeWidgetItem()
-                child.setText(0, unicode(key))
-                item.addChild(child)
-                self.fill_item(child, val)
-        else:
-            item.setText(1, unicode(value))
 
         
 ########################################################################
@@ -297,21 +246,6 @@ class mainwindow(QtGui.QMainWindow):
         self.Messagebox.moveCursor(QtGui.QTextCursor.End)
         self.Messagebox.insertPlainText("\n"+stamp+" - "+text)
         self.Messagebox.moveCursor(QtGui.QTextCursor.End)
-
-    @inlineCallbacks
-    def done_parsing(self,sequence,parameterID):
-        self.ledprogramming.setOn()
-        #server = yield self.connection.get_server('Pulser')
-        #try:
-        #    yield server.stop_sequence()
-        #except Exception,e:
-        #    self.parsermessages('DEBUG: Program sequence \n'+ repr(e))
-        #yield server.new_sequence()
-        #yield server.add_dds_standard_pulses(self.sequence)
-        #yield server.program_sequence()
-        self.ledprogramming.setOff()
-        #self.sendIdtoParameterVault(parameterID)
-        #self.run_sequence()
 
     
     #################
@@ -332,36 +266,6 @@ class mainwindow(QtGui.QMainWindow):
     #send it on on the parsingthread
     #and update the parameter editor
     #################
-
-    @inlineCallbacks
-    def parameter_change(self,signal,info):
-        collection, name = info
-        pv = yield self.connection.get_server('ParameterVault')
-        val = yield pv.get_parameter(collection,name)
-        self.parsingworker.update_parameters(collection,name,val)
-        self.parameters[collection][name] = val
-        try:
-            treeitem = self.parametertree.findItems(name,QtCore.Qt.MatchExactly | QtCore.Qt.MatchRecursive)[0]
-            treeitem.setText(1,str(val))
-        except Exception, e:
-            self.messageout('DEBUG Parameter Change: \n' + repr(e))
-        #self.messageout('New Value from Parameter Vault\n {:} = {:}'.format(name,val))
-
-
-    @inlineCallbacks
-    def get_parameters(self):
-        try:
-            pv = yield self.connection.get_server('ParameterVault')
-            coldict = {}
-            collections = yield pv.get_collections()
-            for acol in collections:
-                coldict[acol] = {}
-                names = yield pv.get_parameter_names(acol)
-                for aname in names:
-                    coldict[acol][aname] = yield pv.get_parameter(acol,aname)
-            self.parameters = coldict
-        except Exception, e:
-            print repr(e)
         
     @inlineCallbacks
     def sendIdtoParameterVault(self,ID):
@@ -369,6 +273,9 @@ class mainwindow(QtGui.QMainWindow):
         yield pv.set_parameter('Raman','confirm',ID)
         #print 'time updated id: ',time.time()
         self.messageout('Completed shot: {:}'.format(ID[1]))
+
+    def offset_value_changed(self,val):
+        self.graphingwidget.offsettime = val
 
         
 
@@ -383,20 +290,13 @@ class mainwindow(QtGui.QMainWindow):
     #Start and stop buttons
     #################
     def on_Start(self):
-        #elf.parsingworker.start.emit()
-        #self.pulserworker.start.emit()
         self.text = str(self.writingwidget.toPlainText())
         self.stopping = False
         self.run()
 
     def on_Stop(self):
         self.stopping = True
-        #self.stop_signal.emit()
-        #self.pulserworker.stopsignal.emit()
         
-    def on_Loop(self):
-        self.pulserworker.loopsignal.emit()
-
         
 
 
@@ -445,7 +345,6 @@ class mainwindow(QtGui.QMainWindow):
 
     @inlineCallbacks
     def run(self):
-        
         pv = yield self.connection.get_server('ParameterVault')
         value = yield pv.get_parameter('Raman','announce')
         d = threads.deferToThread(self.parsingworker.run,self.text,value)
@@ -453,7 +352,7 @@ class mainwindow(QtGui.QMainWindow):
         
         
     def wait_for_output(self,packet):
-        d = threads.deferToThread(self.waiter_func,10)
+        d = threads.deferToThread(self.waiter_func,2)
         d.addCallback(self.output_sequence,packet)
         
     def waiter_func(self,timeout):
@@ -471,7 +370,7 @@ class mainwindow(QtGui.QMainWindow):
     def output_sequence(self,ignore,packet):
         self.hardwarelock = True
         if not self.stopping:
-            self.reactor.callLater(0.4,self.run)
+            self.reactor.callLater(self.updatedelayvalue,self.run)
             binary,ttl,message = packet
             print 'started ',message[1]
             pulser = yield self.connection.get_server('Pulser')
@@ -479,7 +378,7 @@ class mainwindow(QtGui.QMainWindow):
             check = yield pulser.program_dds_and_ttl(binary,ttl)
             self.messageout('Pulser running: '+str(message[1]))
             yield pulser.start_single()
-            completed = yield pulser.wait_sequence_done(1)
+            completed = yield pulser.wait_sequence_done(self.shottimevalue)
             if completed:
                 counts = yield pulser.get_metablock_counts()
                 yield pulser.stop_sequence()

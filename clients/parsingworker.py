@@ -246,10 +246,10 @@ class ParsingWorker(QObject):
         self.sequencestorage = []
         
     @pyqtSlot()
-    def run(self,text,value):
-        print "started parsing ",value[1]
+    def run(self,text,value = None):
         self.text = text
-        self.update_parameters(value)
+        if value is not None:
+            self.update_parameters(value)
         self.parse_text()
         binary,ttl = self.get_binary_repres() 
         return (binary,ttl,value)

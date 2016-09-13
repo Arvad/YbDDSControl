@@ -19,6 +19,7 @@ class graphingwidget(QtGui.QWidget):
         self.reactor = reactor
         self.configpath = configpath
         self.initialize()
+        self.offsettime = 0
 
 
     def initialize(self):
@@ -70,10 +71,10 @@ class graphingwidget(QtGui.QWidget):
             yhigh = 0.75+adds.channelnumber
             ylow = 0.25+adds.channelnumber
 
-            xdata = [0]
+            xdata = [self.timeoffset]
             ydata = [ylow]
             for i in range(len(starttimes)):
-                xdata += [starttimes[i]]*2 + [endtimes[i]]*2
+                xdata += [starttimes[i]+timeoffset]*2 + [endtimes[i]+timeoffset]*2
                 
                 if ydata[-1] == ylow:
                     ydata += [ylow,yhigh,yhigh,ylow]
@@ -84,6 +85,7 @@ class graphingwidget(QtGui.QWidget):
             ydatalist.append(ydata)
         self.plot(xdatalist,ydatalist)
         toc = time.clock()
+        print "plotted ",toc-tic
         
         
     def plot(self,xlist,ylist):
