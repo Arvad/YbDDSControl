@@ -424,7 +424,7 @@ class Pulser(DDS, LineTrigger):
         counts = yield deferToThread(self.api.getMetablockCounts)
         self.inCommunication.release()
         string = bin(counts)
-        #print string
+        print string
         string = string[2:] #remove the leading '0b'
         try:
             started_programming = int(string[0],2)

@@ -48,7 +48,6 @@ class ParsingWorker(QObject):
         self.parameters = paramdict
         
     def update_parameters(self, value):
-        print 'value: ',value
         self.lastannouncement = value
         self.seqID = value[1]
         self.parameters['A'] = value[5]
@@ -59,7 +58,6 @@ class ParsingWorker(QObject):
         self.text = text
         
     def parse_text(self):
-        print "started parsing"
         self.sequence =  []
         self.steadystatedict = hardwareConfiguration.ddsDict
         #tic = time.clock()
@@ -96,7 +94,7 @@ class ParsingWorker(QObject):
                     if "ParameterVault" in line.split():
                         line = re.sub(r'from|ParameterVault','',line)
                         param = line.split()[2]
-                        line =re.sub(param,str(self.parameters['Raman'][param]),line)
+                        line =re.sub(param,str(self.parameters[param]),line)
                     exec('self.' + line.strip())
                 else:
                     words = line.strip().split()
@@ -108,7 +106,6 @@ class ParsingWorker(QObject):
             begin,end,it = loopparams.split(',')
             lines = lines.strip()
             itervar = begin.split('=')[0].strip()
-            print itervar
             begin=int(begin.split('=')[1])
             it = int(it.split('+')[1])
             end = int(end.split('<')[1])
@@ -234,7 +231,7 @@ class ParsingWorker(QObject):
         tic = time.clock()
         binary,ttl = seqObject.progRepresentation()
         
-        return (str(binary),str(ttl),self.seqID)
+        return str(binary),str(ttl)
                 
 
     @pyqtSlot()
@@ -250,13 +247,12 @@ class ParsingWorker(QObject):
         
     @pyqtSlot()
     def run(self,text,value):
+        print "started parsing ",value[1]
         self.text = text
         self.update_parameters(value)
-        #yield self.update_parameters()
-        print "ID: ", self.seqID
         self.parse_text()
-        package = self.get_binary_repres()
-        return package
+        binary,ttl = self.get_binary_repres() 
+        return (binary,ttl,value)
         
 class Sequence():
     """Sequence for programming pulses"""

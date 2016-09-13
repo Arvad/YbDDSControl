@@ -3,6 +3,7 @@ from PyQt4 import QtCore
 from PyQt4.QtCore import pyqtSignal,QThread, QObject, QEventLoop, QWaitCondition, QTimer
 from twisted.internet.defer import inlineCallbacks, Deferred
 from twisted.internet import threads
+import threading
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvasQTAgg
 import matplotlib.pyplot as plt
 from SWITCH_CONTROL import switchWidget
@@ -24,6 +25,7 @@ class mainwindow(QtGui.QMainWindow):
         self.initialize()
         self.ParamID = None
         self.text = ""
+        self.hardwarelock = False
 
 
     # This is a seperate function because it needs to 
@@ -362,12 +364,11 @@ class mainwindow(QtGui.QMainWindow):
             print repr(e)
         
     @inlineCallbacks
-    def sendIdtoParameterVault(self,completedannouncement):
-        self.paramID = completedannouncement[1]
+    def sendIdtoParameterVault(self,ID):
         pv = yield self.connection.get_server('ParameterVault')
-        yield pv.set_parameter('Raman','confirm',completedannouncement)
+        yield pv.set_parameter('Raman','confirm',ID)
         #print 'time updated id: ',time.time()
-        self.messageout('Completed shot: {:}'.format(completedannouncement[1]))
+        self.messageout('Completed shot: {:}'.format(ID[1]))
 
         
 
@@ -444,35 +445,54 @@ class mainwindow(QtGui.QMainWindow):
 
     @inlineCallbacks
     def run(self):
+        
         pv = yield self.connection.get_server('ParameterVault')
         value = yield pv.get_parameter('Raman','announce')
         d = threads.deferToThread(self.parsingworker.run,self.text,value)
-        d.addCallback(self.do_sequence)
+        d.addCallback(self.wait_for_output)
+        
+        
+    def wait_for_output(self,packet):
+        d = threads.deferToThread(self.waiter_func,10)
+        d.addCallback(self.output_sequence,packet)
+        
+    def waiter_func(self,timeout):
+        requestCalls = int(timeout / 0.005 ) #number of request calls
+        for i in range(requestCalls):
+            if not self.hardwarelock:
+                print 'lock released'
+                return True
+            else:
+                time.sleep(0.005)
+        return False
+    
 
     @inlineCallbacks
-    def do_sequence(self,packet):
-        print "started doing"
-        binary,ttl,seqID = packet
-        pulser = yield self.connection.get_server('Pulser')
-        yield pulser.new_sequence()
-        yield pulser.program_dds_and_ttl(binary,ttl)
-        self.messageout('Pulser running: '+str(seqID))
-        yield pulser.start_single()
+    def output_sequence(self,ignore,packet):
+        self.hardwarelock = True
         if not self.stopping:
-            pv = yield self.connection.get_server('ParameterVault')
-            value = yield pv.get_parameter('Raman','announce')         
-            d = threads.deferToThread(self.parsingworker.run,self.text,value)
-            d.addCallback(self.do_sequence)
-        completed = yield pulser.wait_sequence_done(1)
-        if completed:
-            counts = yield pulser.get_metablock_counts()
-            yield pulser.stop_sequence()
-            self.messageout('Metablock counts: '+ str(counts[0]))
-            
-        else:
-            yield pulser.stop_sequence()
-            self.messageout('Pulser: Timed out')
-            
+            self.reactor.callLater(0.4,self.run)
+            binary,ttl,message = packet
+            print 'started ',message[1]
+            pulser = yield self.connection.get_server('Pulser')
+            yield pulser.new_sequence()
+            check = yield pulser.program_dds_and_ttl(binary,ttl)
+            self.messageout('Pulser running: '+str(message[1]))
+            yield pulser.start_single()
+            completed = yield pulser.wait_sequence_done(1)
+            if completed:
+                counts = yield pulser.get_metablock_counts()
+                yield pulser.stop_sequence()
+                self.messageout('Metablock counts: '+ str(counts[0]))
+                
+            else:
+                counts = yield pulser.get_metablock_counts()
+                yield pulser.stop_sequence()
+                self.messageout('Pulser: Timed out')
+            self.sendIdtoParameterVault(message)
+            print message[1]," done"
+        print "releasing lock"
+        self.hardwarelock = False
 
 
 

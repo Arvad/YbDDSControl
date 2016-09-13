@@ -84,7 +84,6 @@ class graphingwidget(QtGui.QWidget):
             ydatalist.append(ydata)
         self.plot(xdatalist,ydatalist)
         toc = time.clock()
-        print "plotted ",toc-tic
         
         
     def plot(self,xlist,ylist):
