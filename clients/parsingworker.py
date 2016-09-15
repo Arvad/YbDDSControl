@@ -250,6 +250,7 @@ class ParsingWorker(QObject):
         self.text = text
         if value is not None:
             self.update_parameters(value)
+            print value[1], 'Parsing'
         self.parse_text()
         binary,ttl = self.get_binary_repres() 
         return (binary,ttl,value)

@@ -1,6 +1,6 @@
 from PyQt4 import QtGui
 from PyQt4 import QtCore
-from PyQt4.QtCore import pyqtSignal,QThread, QObject, QEventLoop, QWaitCondition, QTimer
+from PyQt4.QtCore import pyqtSignal,QThread, QObject, QEventLoop, QWaitCondition, QTimer, Qt
 from twisted.internet.defer import inlineCallbacks, Deferred
 from twisted.internet import threads
 import threading
@@ -26,8 +26,8 @@ class mainwindow(QtGui.QMainWindow):
         self.ParamID = None
         self.text = ""
         self.hardwarelock = False
-        self.shottimevalue
-        self.updatedelayvalue
+        self.shottimevalue = 1000
+        self.updatedelayvalue = 400
 
 
     # This is a seperate function because it needs to 
@@ -71,7 +71,6 @@ class mainwindow(QtGui.QMainWindow):
 
         tabwidget.addTab(sequencewidget,'Sequence')
         tabwidget.addTab(controlwidget,'Controls')
-        tabwidget.addTab(parameterswidget,'Parameters')
         tabwidget.addTab(spectrumplottingwidget,'Spectra')
 
         layout = QtGui.QHBoxLayout(self)
@@ -143,7 +142,7 @@ class mainwindow(QtGui.QMainWindow):
         panel = QtGui.QWidget()
         Startbutton = QtGui.QPushButton(QtGui.QIcon('icons/go-next.svg'),'RUN')
         Stopbutton = QtGui.QPushButton(QtGui.QIcon('icons/emblem-noread.svg'),'STOP')
-        Loopbutton = QtGui.QPushButton(QtGui.QIcon('icons/synchronize.svg'),'LOOP')
+       
         LineTrigbutton = QtGui.QPushButton('linetrig')
         LineTrigbutton.setCheckable(True)
         state = True
@@ -154,11 +153,11 @@ class mainwindow(QtGui.QMainWindow):
         self.ledlinetrigger = LEDindicator('Ext trig')
         self.ledtracking = LEDindicator('Listening to Param')
         self.ledparsing = LEDindicator('Parse')
-        updatedelay = QtGui.QSpinbox()
+        updatedelay = QtGui.QSpinBox()
         updatedelaylabel = QtGui.QLabel('Update delay')
-        shottime = QtGui.QSpinbox()
+        shottime = QtGui.QSpinBox()
         shottimelabel = QtGui.QLabel('Shot time')
-        timeoffset = QtGui.QSpinbox()
+        timeoffset = QtGui.QSpinBox()
         timeoffsetlabel = QtGui.QLabel('Offset')
 
         filetoolbar = QtGui.QToolBar()
@@ -166,17 +165,20 @@ class mainwindow(QtGui.QMainWindow):
         filetoolbar.addAction(QtGui.QIcon('icons/document-save.svg'),'save',self.savebuttonclick)
         filetoolbar.addAction(QtGui.QIcon('icons/document-new.svg'),'new',self.newbuttonclick)
 
-        shottimevalue.valueChanged.connect(lambda val: setattr(self,"shottimevalue",val/1000.))
-        updatedelayvalue.valueChanged.connect(lambda val: setattr(self,"updatedelayvalue",val/1000.))
+        shottime.valueChanged.connect(lambda val: setattr(self,"shottimevalue",val/1000.))
+        updatedelay.valueChanged.connect(lambda val: setattr(self,"updatedelayvalue",val/1000.))
         timeoffset.valueChanged.connect(self.offset_value_changed)
 
 
         shottime.setRange(0,3000)
+        shottime.setValue(1000)
         updatedelay.setRange(0,3000)
-        shottime.setSuffix('ms')
-        updatedelay.setSuffix('ms')
-        timeoffset.setSuffix('ms')
+        updatedelay.setValue(400)
+        shottime.setSuffix(' ms')
+        updatedelay.setSuffix(' ms')
+        timeoffset.setSuffix(' ms')
         timeoffset.setRange(0,3000)
+        timeoffset.setValue(200)
 
         self.Messagebox = QtGui.QTextEdit()
         self.Messagebox.setReadOnly(True)
@@ -186,7 +188,6 @@ class mainwindow(QtGui.QMainWindow):
 
         Startbutton.pressed.connect(self.on_Start)
         Stopbutton.pressed.connect(self.on_Stop)
-        Loopbutton.pressed.connect(self.on_Loop)
         Spacetaker = QtGui.QWidget()
         ledpanel =QtGui.QFrame()
         ledpanel.setFrameStyle(1)
@@ -202,15 +203,16 @@ class mainwindow(QtGui.QMainWindow):
         layout = QtGui.QGridLayout()
         layout.addWidget(Startbutton,0,0)
         layout.addWidget(Stopbutton,1,0)
-        layout.addWidget(Loopbutton,2,0)
         layout.addWidget(ledpanel,0,1,3,1)
-        layout.addWidget(LineTrigbutton,3,0)
-        layout.addWidget(filetoolbar,4,0)
+        layout.addWidget(LineTrigbutton,2,0)
+        layout.addWidget(filetoolbar,3,0)
         layout.addWidget(self.Messagebox,0,2,7,4)
-        layout.addWidget(updatedelaylabel,5,0)
-        layout.addWidget(shottimelabel,6,0)
-        layout.addWidget(updatedelay,5,1)
-        layout.addWidget(shottime,6,1)
+        layout.addWidget(updatedelaylabel,4,0,Qt.AlignRight)
+        layout.addWidget(shottimelabel,5,0,Qt.AlignRight)
+        layout.addWidget(updatedelay,4,1)
+        layout.addWidget(shottime,5,1)
+        layout.addWidget(timeoffsetlabel,6,0,Qt.AlignRight)
+        layout.addWidget(timeoffset,6,1)
         layout.setSpacing(2)
         layout.setContentsMargins(0,0,0,0)
         panel.setLayout(layout)
@@ -275,7 +277,7 @@ class mainwindow(QtGui.QMainWindow):
         self.messageout('Completed shot: {:}'.format(ID[1]))
 
     def offset_value_changed(self,val):
-        self.graphingwidget.offsettime = val
+        self.graphingwidget.timeoffset = val
 
         
 
@@ -344,9 +346,10 @@ class mainwindow(QtGui.QMainWindow):
         self.writingwidget.clear()
 
     @inlineCallbacks
-    def run(self):
+    def run(self,bool = None):
         pv = yield self.connection.get_server('ParameterVault')
         value = yield pv.get_parameter('Raman','announce')
+        print value[1], ' Parameter Vault'
         d = threads.deferToThread(self.parsingworker.run,self.text,value)
         d.addCallback(self.wait_for_output)
         
@@ -356,10 +359,11 @@ class mainwindow(QtGui.QMainWindow):
         d.addCallback(self.output_sequence,packet)
         
     def waiter_func(self,timeout):
+        #print packet[2][1], 'waiting'
         requestCalls = int(timeout / 0.005 ) #number of request calls
         for i in range(requestCalls):
             if not self.hardwarelock:
-                print 'lock released'
+                #print packet[2][1], ' lock released'
                 return True
             else:
                 time.sleep(0.005)
@@ -370,19 +374,20 @@ class mainwindow(QtGui.QMainWindow):
     def output_sequence(self,ignore,packet):
         self.hardwarelock = True
         if not self.stopping:
-            self.reactor.callLater(self.updatedelayvalue,self.run)
+            d = threads.deferToThread(self.waiter_func,0.4)
+            d.addCallback(self.run)
+            #self.reactor.callLater(0,self.run)
             binary,ttl,message = packet
-            print 'started ',message[1]
+            print message[1],'started '
             pulser = yield self.connection.get_server('Pulser')
             yield pulser.new_sequence()
             check = yield pulser.program_dds_and_ttl(binary,ttl)
-            self.messageout('Pulser running: '+str(message[1]))
+           
             yield pulser.start_single()
             completed = yield pulser.wait_sequence_done(self.shottimevalue)
             if completed:
                 counts = yield pulser.get_metablock_counts()
                 yield pulser.stop_sequence()
-                self.messageout('Metablock counts: '+ str(counts[0]))
                 
             else:
                 counts = yield pulser.get_metablock_counts()
