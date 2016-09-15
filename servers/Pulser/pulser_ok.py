@@ -326,14 +326,9 @@ class Pulser(DDS, LineTrigger):
             yield self.inCommunication.acquire()
             done = yield deferToThread(self.api.getPulseFlagList)
             self.inCommunication.release()
-<<<<<<< Updated upstream
-            if done: returnValue(True)
-            yield self.wait(0.005)
-=======
             if done == 3:
 			    returnValue(True)
             yield self.wait(0.050)
->>>>>>> Stashed changes
         returnValue(False)
 		
 	@setting(37, 'Wait Sequence Started', timeout = 'v', returns = 'b')
