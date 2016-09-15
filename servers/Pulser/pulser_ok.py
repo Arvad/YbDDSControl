@@ -324,11 +324,35 @@ class Pulser(DDS, LineTrigger):
         requestCalls = int(timeout / 0.005 ) #number of request calls
         for i in range(requestCalls):
             yield self.inCommunication.acquire()
-            done = yield deferToThread(self.api.isSeqDone)
+            done = yield deferToThread(self.api.getPulseFlagList)
             self.inCommunication.release()
+<<<<<<< Updated upstream
             if done: returnValue(True)
             yield self.wait(0.005)
+=======
+            if done == 3:
+			    returnValue(True)
+            yield self.wait(0.050)
+>>>>>>> Stashed changes
         returnValue(False)
+		
+	@setting(37, 'Wait Sequence Started', timeout = 'v', returns = 'b')
+    def waitSequenceStarted(self, c, timeout = None):
+        """
+        Returns true if the sequence has started within a timeout period (in seconds)
+        """
+        if timeout is None: timeout = self.sequenceTimeRange[1]
+        #print timeout
+        requestCalls = int(timeout / 0.050 ) #number of request calls
+        for i in range(requestCalls):
+            yield self.inCommunication.acquire()
+            done = yield deferToThread(self.api.getPulseFlagList)
+            self.inCommunication.release()
+            if done > 0:
+			    returnValue(True)
+            yield self.wait(0.050)
+        returnValue(False)
+    
     
     @setting(17, 'Repeatitions Completed', returns = 'w')
     def repeatitionsCompleted(self, c):

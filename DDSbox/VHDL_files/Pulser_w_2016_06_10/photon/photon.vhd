@@ -310,6 +310,7 @@ architecture arch of photon is
     signal    pulser_infinite_loop            : STD_LOGIC; ----'1' = infinite loop. '0' = single shot
     signal    pulser_start_bit                : STD_LOGIC; ----'1' = run sequence. '0' = pause sequence
     signal    pulser_sequence_done            : STD_LOGIC; ----'1' = sequence is done. '0' = seq is not yet done. In infinite mode it will always be '0'
+    signal   pulser_sequence_started          : STD_LOGIC; ----'1' = sequence is started. '0' sequence is not started yet, probably waiting for trigger
     signal    pulser_flag_register            : STD_LOGIC_VECTOR (15 downto 0);---- this vector is to combine all above for convenience.
     
     --====== NORMAL PMT ========--
@@ -846,6 +847,7 @@ ram1: pulser_ram port map (
             time_stamp:=0;
             master_logic <= "00000000000000000000000000000000";
             pulser_sequence_done <= '0';----------------"seq done flag" is deasserted
+            pulser_sequence_started <= '0';
             seq_count:=0;
         ELSIF (rising_edge(clk_100)) THEN
             IF (pulser_start_bit = '1') THEN ------ This means the "run" flaged is set such that the pulse runs.
@@ -858,6 +860,7 @@ ram1: pulser_ram port map (
                                     ram_process_count := ram_process_count + 1;
                                 END IF;
                 WHEN 1 =>   pulser_ram_clkb <= '1';
+                                pulser_sequence_started <= '1';
                                 ram_process_count := ram_process_count + 1;                
                 WHEN 2 =>   master_logic <= pulser_ram_doutb (31 downto 0);
                                ram_read_address:=1;
@@ -1065,7 +1068,7 @@ pulser_start_bit <= ep00wire(2);
 line_triggering_enabled <= ep00wire(3);
 
 pulser_flag_register(0) <= pulser_sequence_done;
-
+pulser_flag_register(1) <= pulser_sequence_started;
 
 
 

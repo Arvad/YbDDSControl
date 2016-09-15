@@ -118,9 +118,11 @@ class api(object):
         self.xem.SetWireInValue(0x00,0x01,0x01)
         self.xem.UpdateWireIns()
     
-    def isSeqDone(self):
+    def getPulseFlagList(self):
         '''
-        check if the pulse sequece is done executing or not
+		Get the pulser flag list
+		10 = sequence has started
+		11 = sequence has ended execution
         '''
         self.xem.SetWireInValue(0x00,0x00,0xf0)
         self.xem.UpdateWireIns()
