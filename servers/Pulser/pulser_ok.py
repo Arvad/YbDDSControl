@@ -327,11 +327,11 @@ class Pulser(DDS, LineTrigger):
             done = yield deferToThread(self.api.getPulseFlagList)
             self.inCommunication.release()
             if done == 3:
-			    returnValue(True)
+                returnValue(True)
             yield self.wait(0.050)
         returnValue(False)
-		
-	@setting(37, 'Wait Sequence Started', timeout = 'v', returns = 'b')
+
+    @setting(99, 'Wait Sequence Started', timeout = 'v', returns = 'b')
     def waitSequenceStarted(self, c, timeout = None):
         """
         Returns true if the sequence has started within a timeout period (in seconds)
@@ -343,8 +343,8 @@ class Pulser(DDS, LineTrigger):
             yield self.inCommunication.acquire()
             done = yield deferToThread(self.api.getPulseFlagList)
             self.inCommunication.release()
-            if done > 0:
-			    returnValue(True)
+            if done == 2:
+                returnValue(True)
             yield self.wait(0.050)
         returnValue(False)
     
@@ -443,7 +443,7 @@ class Pulser(DDS, LineTrigger):
         counts = yield deferToThread(self.api.getMetablockCounts)
         self.inCommunication.release()
         string = bin(counts)
-        print string
+        #print string
         string = string[2:] #remove the leading '0b'
         try:
             started_programming = int(string[0],2)

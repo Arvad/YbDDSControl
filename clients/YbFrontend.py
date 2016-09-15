@@ -349,7 +349,6 @@ class mainwindow(QtGui.QMainWindow):
     def run(self,bool = None):
         pv = yield self.connection.get_server('ParameterVault')
         value = yield pv.get_parameter('Raman','announce')
-        print value[1], ' Parameter Vault'
         d = threads.deferToThread(self.parsingworker.run,self.text,value)
         d.addCallback(self.wait_for_output)
         
@@ -359,11 +358,9 @@ class mainwindow(QtGui.QMainWindow):
         d.addCallback(self.output_sequence,packet)
         
     def waiter_func(self,timeout):
-        #print packet[2][1], 'waiting'
         requestCalls = int(timeout / 0.005 ) #number of request calls
         for i in range(requestCalls):
             if not self.hardwarelock:
-                #print packet[2][1], ' lock released'
                 return True
             else:
                 time.sleep(0.005)
@@ -374,16 +371,13 @@ class mainwindow(QtGui.QMainWindow):
     def output_sequence(self,ignore,packet):
         self.hardwarelock = True
         if not self.stopping:
-            d = threads.deferToThread(self.waiter_func,0.4)
-            d.addCallback(self.run)
-            #self.reactor.callLater(0,self.run)
             binary,ttl,message = packet
-            print message[1],'started '
             pulser = yield self.connection.get_server('Pulser')
             yield pulser.new_sequence()
             check = yield pulser.program_dds_and_ttl(binary,ttl)
-           
             yield pulser.start_single()
+            started = yield pulser.wait_sequence_started(self.shottimevalue)
+            reactor.callLater(self.updatedelayvalue,self.run)
             completed = yield pulser.wait_sequence_done(self.shottimevalue)
             if completed:
                 counts = yield pulser.get_metablock_counts()
@@ -394,8 +388,6 @@ class mainwindow(QtGui.QMainWindow):
                 yield pulser.stop_sequence()
                 self.messageout('Pulser: Timed out')
             self.sendIdtoParameterVault(message)
-            print message[1]," done"
-        print "releasing lock"
         self.hardwarelock = False
 
 
