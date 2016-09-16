@@ -417,8 +417,8 @@ class Sequence():
     def addDDSPulses(self,values):
         '''
         input in the form of a list:
-        Modulation pules : [(name, start, duration, frequency, amplitude, phase, freq_deviation, mod_freq,mode)]
         Normal  pulses   : [(name, start, duration, frequency, amplitude, phase, ramp_rate, amp_ramp_rate,mode)]
+        Modulation pules : [(name, start, duration, frequency, amplitude, phase, freq_deviation, mod_freq,mode)]
         '''
         value = sorted(values, key = lambda x: (x[0], x[1]))
         for i in range(len(values)):
@@ -433,7 +433,6 @@ class Sequence():
                 nextvalue = None
 
             name,start,dur,freq,ampl,phase,modespecific1,modespecific2,mode = value
-
             if nextvalue is not None:
                 nextname,nextstart,nextdur,nextfreq,nextampl,nextphase,nextmodespecific1,nextmodespecific2,nextmode = nextvalue
 
@@ -446,7 +445,6 @@ class Sequence():
             freq = freq['MHz']
             ampl = ampl['dBm'] 
             phase = phase['deg']
-
             if mode == 0: #normal mode
                 modespecific1 = modespecific1['MHz'] #ramp_rate
                 modespecific2 = modespecific2['dBm'] #amp_ramp_rate
@@ -463,41 +461,40 @@ class Sequence():
                     nextmodespecific1 = nextmodespecific1['MHz'] #freq_deviation
                     nextmodespecific2 = nextmodespecific2['MHz'] #modulation_freq
         
-        if nextvalue is not None:
-            freq_off = nextfreq
-            mode_off = nextmode
-            modespecific1_off = nextmodespecific1
-            modespecific2_off = nextmodespecific2
-        else:
-            freq_off, ampl_off = channel.off_parameters
-            mode_off = mode
-            modespecific1_off = modespecific1
-            modespecific2_off = modespecific2
-
-        if freq == 0:
-            freq, ampl = freq_off,ampl_off
-        else:
-            self._checkRange('frequency', channel, freq)
-            self._checkRange('amplitude', channel, ampl)
-        num = self.settings_to_num(channel, freq, ampl, mode, phase, modespecific1, modespecific2)
-
-        if not channel.phase_coherent_model:
-            num_off = self.settings_to_num(channel, freq_off, ampl_off, mode)
-        else:
-            #note that keeping the frequency the same when switching off to preserve phase coherence
-            num_off = self.settings_to_num(channel, freq_off, ampl_off, mode_off,phase, modespecific1_off, modespecific2_off)
+            if nextvalue is not None:
+                freq_off = nextfreq
+                mode_off = nextmode
+                modespecific1_off = nextmodespecific1
+                modespecific2_off = nextmodespecific2
+            else:
+                freq_off, ampl_off = channel.off_parameters
+                mode_off = mode
+                modespecific1_off = modespecific1
+                modespecific2_off = modespecific2
+                
+            if freq == 0:
+                freq, ampl = freq_off,ampl_off
+            else:
+                self._checkRange('frequency', channel, freq)
+                self._checkRange('amplitude', channel, ampl)
+            num = self.settings_to_num(channel, freq, ampl, mode, phase, modespecific1, modespecific2)
             
-        #note < sign, because start can not be 0. 
-        #this would overwrite the 0 position of the ram, and cause the dds to change before pulse sequence is launched
-        if not start <= self.sequenceTimeRange[1]: 
-            raise Exception ("DDS start time out of acceptable input range for channel {0} at time {1}".format(name, start))
-        if not start + dur <= self.sequenceTimeRange[1]: 
-            raise Exception ("DDS start time out of acceptable input range for channel {0} at time {1}".format(name, start + dur))
-        if start == 0:
-            self.addDDS(name,start,num,'steadystate')
-        elif not dur == 0:#0 length pulses are ignored
-            self.addDDS(name, start, num, 'start')
-            self.addDDS(name, start + dur, num_off, 'stop')
+            if not channel.phase_coherent_model:
+                num_off = self.settings_to_num(channel, freq_off, ampl_off, mode)
+            else:
+                #note that keeping the frequency the same when switching off to preserve phase coherence
+                num_off = self.settings_to_num(channel, freq_off, ampl_off, mode_off,phase, modespecific1_off, modespecific2_off)   
+            #note < sign, because start can not be 0. 
+            #this would overwrite the 0 position of the ram, and cause the dds to change before pulse sequence is launched
+            if not start <= self.sequenceTimeRange[1]: 
+                raise Exception ("DDS start time out of acceptable input range for channel {0} at time {1}".format(name, start))
+            if not start + dur <= self.sequenceTimeRange[1]: 
+                raise Exception ("DDS start time out of acceptable input range for channel {0} at time {1}".format(name, start + dur))
+            if start == 0:
+                self.addDDS(name,start,num,'steadystate')
+            elif not dur == 0:#0 length pulses are ignored
+                self.addDDS(name, start, num, 'start')
+                self.addDDS(name, start + dur, num_off, 'stop')
             
 
     def settings_to_num(self, channel, freq, ampl, mode, phase = 0.0, ramp_rate_or_freq_deviation = 0.0, amp_ramp_rate_or_mod_freq = 0.0):

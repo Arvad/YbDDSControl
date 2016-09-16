@@ -1,7 +1,7 @@
 from PyQt4 import QtGui
 from PyQt4.QtCore import Qt
 class LEDindicator(QtGui.QFrame):
-    def __init__(self,name):
+    def __init__(self,name,state=False):
         super(LEDindicator, self).__init__()
         self.led = QtGui.QWidget()
         self.led.setAutoFillBackground(True)
@@ -20,8 +20,8 @@ class LEDindicator(QtGui.QFrame):
         layout.addWidget(self.label)
         layout.setAlignment(Qt.AlignLeft)
         self.setLayout(layout)
-        self.State = None
-        self.setOff()
+        self.State = state
+        self.setState(state)
 
 
     def setOn(self):

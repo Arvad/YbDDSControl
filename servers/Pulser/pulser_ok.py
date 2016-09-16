@@ -326,7 +326,7 @@ class Pulser(DDS, LineTrigger):
             yield self.inCommunication.acquire()
             done = yield deferToThread(self.api.getPulseFlagList)
             self.inCommunication.release()
-            if done == 3:
+            if done == 3: #11 means started and done (binary)
                 returnValue(True)
             yield self.wait(0.050)
         returnValue(False)
@@ -343,7 +343,7 @@ class Pulser(DDS, LineTrigger):
             yield self.inCommunication.acquire()
             done = yield deferToThread(self.api.getPulseFlagList)
             self.inCommunication.release()
-            if done == 2:
+            if done >= 2: #10 means started, 11 means done (binary)
                 returnValue(True)
             yield self.wait(0.050)
         returnValue(False)

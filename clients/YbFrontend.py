@@ -51,6 +51,7 @@ class mainwindow(QtGui.QMainWindow):
         print self.connection
         p = yield self.connection.get_server('Pulser')
         self.hwconfigpath = yield p.get_hardwareconfiguration_path()
+        self.linetriggerstate = yield p.line_trigger_state()
        
 
 ########################################################################
@@ -88,7 +89,7 @@ class mainwindow(QtGui.QMainWindow):
     #################
     def makeSpectrumPlottingWidget(self):
         from SpectrumPlottingWidget import SpectrumPlottingWidget
-        widget = SpectrumPlottingWidget()
+        widget = SpectrumPlottingWidget(self.reactor)
         return widget
         
 
@@ -99,14 +100,11 @@ class mainwindow(QtGui.QMainWindow):
         widget = QtGui.QWidget()
         from SWITCH_CONTROL import switchWidget
         from DDS_CONTROL import DDS_CONTROL
-        from LINETRIGGER_CONTROL import linetriggerWidget
 
         layout = QtGui.QVBoxLayout()
         try:
             pass
-            #layout.addWidget(switchWidget(self.reactor,self.connection))
             layout.addWidget(DDS_CONTROL(self.reactor,self.connection))
-            layout.addWidget(linetriggerWidget(self.reactor,self.connection))
         except AttributeError, e:
             print e
         widget.setLayout(layout)
@@ -119,7 +117,7 @@ class mainwindow(QtGui.QMainWindow):
         from graphingwidget import graphingwidget
         self.filename = None
         splitterwidget = QtGui.QSplitter()
-        string = "Channel DDS_4 do 200 MHz with 9 dBm for 100 ms at 0.01 ms in mode Normal\nChannel DDS_2 do 200 MHz with 9 dBm for 100 ms at 0.01 ms in mode Normal"        
+        string = "Channel DDS_2 do 200 MHz with 9 dBm for 1 ms at 1 ms in mode Normal\nChannel DDS_2 do 200 MHz with 9 dBm for 1 ms at 3 ms in mode Normal"        
         self.graphingwidget = graphingwidget(self.reactor,self.hwconfigpath)
         self.writingwidget = QtGui.QTextEdit('Writingbox')
         self.writingwidget.setPlainText(string)
@@ -137,20 +135,19 @@ class mainwindow(QtGui.QMainWindow):
         splitterwidget.addWidget(leftwidget)
         splitterwidget.addWidget(self.graphingwidget)
         return splitterwidget
-
+    
+    
     def makeButtonPanel(self):
         panel = QtGui.QWidget()
         Startbutton = QtGui.QPushButton(QtGui.QIcon('icons/go-next.svg'),'RUN')
         Stopbutton = QtGui.QPushButton(QtGui.QIcon('icons/emblem-noread.svg'),'STOP')
-       
         LineTrigbutton = QtGui.QPushButton('linetrig')
         LineTrigbutton.setCheckable(True)
-        state = True
-        LineTrigbutton.setChecked(state)
+        LineTrigbutton.setChecked(self.linetriggerstate)
         LineTrigbutton.pressed.connect(self.toggle_linetrig)
         self.ledrunning = LEDindicator('Running')
         self.ledprogramming = LEDindicator('Prog.')
-        self.ledlinetrigger = LEDindicator('Ext trig')
+        self.ledlinetrigger = LEDindicator('Ext trig',self.linetriggerstate)
         self.ledtracking = LEDindicator('Listening to Param')
         self.ledparsing = LEDindicator('Parse')
         updatedelay = QtGui.QSpinBox()
@@ -232,7 +229,6 @@ class mainwindow(QtGui.QMainWindow):
         self.parsingworker.new_sequence_trigger.connect(self.graphingwidget.do_sequence)
         
 
-        
 ########################################################################
 #########                                                      #########
 #########                Signal and Callback                   #########
@@ -255,13 +251,11 @@ class mainwindow(QtGui.QMainWindow):
     #################    
     @inlineCallbacks
     def toggle_linetrig(self):
-        state = self.sender().isChecked()
+        state = not self.sender().isChecked() #is notted because it sends back the previous state of the checkbutton an not the new state
         server = yield self.connection.get_server('Pulser')
         yield server.line_trigger_state(state)
-        if state:
-            self.ledlinetrigger.setOn()
-        else:
-            self.ledlinetrigger.setOff()
+        self.ledlinetrigger.setState(state)
+                        
 
     #################
     #Parameter change on the parameter server
