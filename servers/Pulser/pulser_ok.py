@@ -328,7 +328,7 @@ class Pulser(DDS, LineTrigger):
             self.inCommunication.release()
             if done == 3: #11 means started and done (binary)
                 returnValue(True)
-            yield self.wait(0.050)
+            yield self.wait(0.005)
         returnValue(False)
 
     @setting(99, 'Wait Sequence Started', timeout = 'v', returns = 'b')
@@ -338,14 +338,14 @@ class Pulser(DDS, LineTrigger):
         """
         if timeout is None: timeout = self.sequenceTimeRange[1]
         #print timeout
-        requestCalls = int(timeout / 0.050 ) #number of request calls
+        requestCalls = int(timeout / 0.005 ) #number of request calls
         for i in range(requestCalls):
             yield self.inCommunication.acquire()
             done = yield deferToThread(self.api.getPulseFlagList)
             self.inCommunication.release()
             if done >= 2: #10 means started, 11 means done (binary)
                 returnValue(True)
-            yield self.wait(0.050)
+            yield self.wait(0.0050)
         returnValue(False)
     
     

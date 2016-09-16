@@ -89,7 +89,7 @@ class mainwindow(QtGui.QMainWindow):
     #################
     def makeSpectrumPlottingWidget(self):
         from SpectrumPlottingWidget import SpectrumPlottingWidget
-        widget = SpectrumPlottingWidget(self.reactor)
+        widget = SpectrumPlottingWidget()
         return widget
         
 
@@ -288,11 +288,11 @@ class mainwindow(QtGui.QMainWindow):
     def on_Start(self):
         self.text = str(self.writingwidget.toPlainText())
         self.stopping = False
+        self.messageout('Starting')
         self.run()
 
     def on_Stop(self):
         self.stopping = True
-        
         
 
 
@@ -372,16 +372,16 @@ class mainwindow(QtGui.QMainWindow):
             yield pulser.start_single()
             started = yield pulser.wait_sequence_started(self.shottimevalue)
             reactor.callLater(self.updatedelayvalue,self.run)
-            completed = yield pulser.wait_sequence_done(self.shottimevalue)
-            if completed:
-                counts = yield pulser.get_metablock_counts()
-                yield pulser.stop_sequence()
-                
-            else:
-                counts = yield pulser.get_metablock_counts()
-                yield pulser.stop_sequence()
+            if started:
+                completed = yield pulser.wait_sequence_done(self.shottimevalue)
+            counts = yield pulser.get_metablock_counts()
+            yield pulser.stop_sequence()
+            if not started or not completed:
                 self.messageout('Pulser: Timed out')
             self.sendIdtoParameterVault(message)
+            
+        if self.stopping:
+                self.messageout('Stopped')
         self.hardwarelock = False
 
 
