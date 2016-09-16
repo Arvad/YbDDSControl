@@ -135,7 +135,7 @@ class linetriggerWidget(QtGui.QFrame):
     def followSignal(self, x, (state, duration)):
         self.spinbox.blockSignals(True)
         self.button_linetrig.set_value_no_signal(state)
-        self.spinbox.setValue(duration)
+        self.spinbox.setValue(duration['us'])
         self.spinbox.blockSignals(False)
 
     def closeEvent(self, x):
