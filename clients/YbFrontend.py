@@ -182,6 +182,7 @@ class mainwindow(QtGui.QMainWindow):
         font = self.Messagebox.font()
         font.setFamily("courier")
         font.setPointSize(10)
+        self.Messagebox.contextMenuEvent = self.messagebox_contextmenu
 
         Startbutton.pressed.connect(self.on_Start)
         Stopbutton.pressed.connect(self.on_Stop)
@@ -273,14 +274,20 @@ class mainwindow(QtGui.QMainWindow):
     def offset_value_changed(self,val):
         self.graphingwidget.timeoffset = val
 
-        
+    def messagebox_contextmenu(self,event):
+        self.menu = QtGui.QMenu(self)
+        clearAction = QtGui.QAction('clear',self)
+        clearAction.triggered.connect(lambda : self.Messagebox.setText(""))
+        self.menu.addAction(clearAction)
+        self.menu.popup(QtGui.QCursor.pos())
 
 ########################################################################
 #########                                                      #########
 #########                BUTTON ACTIONS                        #########
 #########                                                      #########
 ########################################################################
-
+    
+    
 
     #################
     #Start and stop buttons

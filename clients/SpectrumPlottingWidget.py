@@ -44,7 +44,7 @@ class SpectrumPlottingWidget(QtGui.QWidget):
         self.dataitemdict={}
         self.mainwindow.clear()
         if len(self.directorydisplay.text()) > 0:
-            filelist = [i for i in listdir(self.directorydisplay.text()) if i.endswith(".csv") and re.search('spectrum',i) is not None]
+            filelist = [i for i in listdir(self.directorydisplay.text()) if i.endswith(".csv") and re.search('sideband',i) is not None]
             Ncolumn = int(len(filelist)**0.5)+1
             i = 0
             j = 0
@@ -83,5 +83,5 @@ class SpectrumPlottingWidget(QtGui.QWidget):
 
 if __name__=="__main__":
     a = QtGui.QApplication( [] )
-    pl = Plottingwidget()
+    pl = SpectrumPlottingWidget()
     sys.exit(a.exec_())

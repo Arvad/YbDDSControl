@@ -183,6 +183,16 @@ class ParsingWorker(QObject):
                     __amp = WithUnit(float(value),unit)
                 except ValueError:
                     __amp = WithUnit(eval('self.'+value.split()[1].strip()),unit)
+            elif desig == 'freqramp':
+                try:
+                    __ramprate = WithUnit(float(value),unit)
+                except ValueError:
+                    __ramprate = WithUnit(eval('self.'+value.split()[1].strip()),unit)
+            elif desig == 'ampramp':
+                try:
+                    __ampramp = WithUnit(float(value),unit)
+                except ValueError:
+                    __ampramp = WithUnit(eval('self.'+value.split()[1].strip()),unit)
         self.sequence.append((name[0],__begin,__dur,__freq,__amp,__phase,__ramprate,__ampramp,mode))
     
     def makeModulationPulse(self,name,mode,parameters):
@@ -355,6 +365,7 @@ class Sequence():
     def parseDDS(self):
         if not self.userAddedDDS(): return None
         state = self._getCurrentDDS()
+        print state
         pulses_end = {}.fromkeys(state, (0, 'stop')) #time / boolean whether in a middle of a pulse 
         dds_program = {}.fromkeys(state, '')
         lastTime = 0
