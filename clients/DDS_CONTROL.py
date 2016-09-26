@@ -343,12 +343,12 @@ class DDS_CONTROL(QtGui.QFrame):
             if chan == "Moving Lattice":
                 widget = DDS_MOVING_LATTICE_CHAN(chan, self.reactor, self.cxn, self.context)
                 self.widgets[chan] = widget
-                layout.addWidget(widget, item // self.widgets_per_row, item % self.widgets_per_row)
+                layout.addWidget(widget, item // 2, item % 2)
                 item += 1
             else:
                 widget = DDS_CHAN(chan, self.reactor, self.cxn, self.context)
                 self.widgets[chan] = widget
-                layout.addWidget(widget, item // self.widgets_per_row, item % self.widgets_per_row)
+                layout.addWidget(widget, item // 2, item % 2)
                 item += 1 
         self.setLayout(layout)
         

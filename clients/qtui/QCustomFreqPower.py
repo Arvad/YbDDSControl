@@ -27,15 +27,40 @@ class TextChangingButton(QtGui.QPushButton):
         self.setSizePolicy(QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Minimum)
         #connect signal for appearance changing
         self.toggled.connect(self.setAppearance)
+        self.defaultstyle = self.styleSheet()
         self.setAppearance(self.isDown())
-    
+        self.setAutoFillBackground(True)
+        self.setStyleSheet("QPushButton {\n"
+"color: black;\n"
+"border: 2px solid #555;\n"
+"border-radius: 11px;\n"
+"padding: 5px;\n"
+"background: qradialgradient(cx: 0.3, cy: -0.4,\n"
+"fx: 0.3, fy: -0.4,\n"
+"radius: 1.35, stop: 0 lightgray, stop: 1 gray);\n"
+"min-width: 80px;\n"
+"max-width: 80px;\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"background: qradialgradient(cx: 0.4, cy: 0.5,\n"
+"fx: 0.3, fy: -0.4,\n"
+"radius: 1.35, stop: 0 red, stop: 1 lightred);\n"
+"}\n"
+"\n"
+"QPushButton:checked {\n"
+"background: qradialgradient(cx: 0.4, cy: -0.1,\n"
+"fx: 0.4, fy: -0.1,\n"
+"radius: 1.35, stop: 0 red, stop: 1 darkred);\n"
+"}")
+        
     def setAppearance(self, down):
         if down:
             self.setText('I')
-            self.setPalette(QtGui.QPalette(QtCore.Qt.darkGreen))
+            #self.setStyleSheet("background-color: red; border-color:darkred")
         else:
             self.setText('O')
-            self.setPalette(QtGui.QPalette(QtCore.Qt.black))
+            #self.setStyleSheet(self.defaultstyle)
     
     def sizeHint(self):
         return QtCore.QSize(37, 26)
@@ -55,21 +80,11 @@ class QCustomFreqPower(QtGui.QFrame):
         freqlabel = QtGui.QLabel('Frequency (MHz)')
         powerlabel = QtGui.QLabel('Power (dBm)')
         steplabel = QtGui.QLabel('Step (MHz)')
-#         if switchable:
-#             layout.addWidget(title,0, 0, 1, 3)
-#         else:
-#             layout.addWidget(title,0, 0, 1, 2)
-#         layout.addWidget(freqlabel,2, 0, 1, 1)
-#         layout.addWidget(steplabel,2,1,1,1)
-#         layout.addWidget(powerlabel,2, 2, 1, 1)
-        
-        if switchable:
-            layout.addWidget(title,1, 0, 1, 1)
-        else:
-            layout.addWidget(title,1, 0, 1, 1)
-        layout.addWidget(freqlabel,0, 1, 1, 1)
-        layout.addWidget(steplabel,0,2,1,1)
-        layout.addWidget(powerlabel,0, 3, 1, 1)        
+
+        layout.addWidget(title,0, 0,1,4)
+        layout.addWidget(freqlabel,1, 1)
+        layout.addWidget(steplabel,1,2)
+        layout.addWidget(powerlabel,1, 3)        
         
         
         #editable fields
@@ -93,27 +108,6 @@ class QCustomFreqPower(QtGui.QFrame):
         
         self.stepBox.valueChanged.connect(self.stepChanged)
         
-        
-        ##
-        #self.spinFreq.setStyleSheet("background-color:red;")
-        #image = QtGui.QImage("chessboard.gif")
-#         pix = QtGui.QPixmap("chessboard.gif")
-#         palette = QtGui.QPalette()
-#         palette.setBrush(self.backgroundRole(), QtGui.QBrush(pix))
-#         #self.spinFreq.setFlat(True)
-#         self.spinFreq.setAutoFillBackground(True)
-#         self.spinFreq.setPalette(palette)
-        #palette = QtGui.QPalette()
-        #palette.setBrush(QtGui.QPalette.Background, image)
-        #self.spinFreq.set
-#        self.spinFreq.setStyleSheet("border-image:url(chessboard);")
-         #self.setStyleSheet("background-image:url(chessboard.gif);")
-        #self.spinFreq.setAutoFillBackground(True)
-        #self.spinFreq.setStyleSheet("background-image:url(chessboard.gif);")
-        #self.spinFreq.setStyleSheet("background-color:red;")
-        #self.setStyleSheet("background-color:red;")
-        ##
-        
         self.spinPower = QtGui.QDoubleSpinBox()
         self.spinPower.setFont(QtGui.QFont('MS Shell Dlg 2',pointSize=16))
         self.spinPower.setSizePolicy(QtGui.QSizePolicy.Fixed,QtGui.QSizePolicy.Fixed)
@@ -121,12 +115,12 @@ class QCustomFreqPower(QtGui.QFrame):
         self.spinPower.setSingleStep(0.1)
         self.spinPower.setRange(-145.0, 30.0)
         self.spinPower.setKeyboardTracking(False)
-        layout.addWidget(self.spinFreq,     1, 1)
-        layout.addWidget(self.stepBox,      1, 2)
-        layout.addWidget(self.spinPower,    1, 3)
+        layout.addWidget(self.spinFreq,     2, 1)
+        layout.addWidget(self.stepBox,      2, 2)
+        layout.addWidget(self.spinPower,    2, 3)
         if switchable:
             self.buttonSwitch = TextChangingButton()
-            layout.addWidget(self.buttonSwitch, 1, 4)
+            layout.addWidget(self.buttonSwitch, 2, 4)
         self.setLayout(layout)
         
     def stepChanged(self, value):
