@@ -39,6 +39,7 @@ class ParsingWorker(QObject):
         self.mutex = QMutex()
         self.steadystatedict = None
         self.lastannouncement = (0L,0L,0,0L,False,0.0,0.0,0.0)
+        self.timeoffset = 0
         sys.path.append(hwconfigpath)
         global hardwareConfiguration
         from hardwareConfiguration import hardwareConfiguration
@@ -170,9 +171,9 @@ class ParsingWorker(QObject):
                     __freq = WithUnit(eval('self.'+value.split()[1].strip()),unit) 
             elif desig == 'at':
                 try:
-                    __begin = WithUnit(float(value),unit)
+                    __begin = WithUnit(float(value),unit) - self.timeoffset
                 except ValueError:
-                    __begin = WithUnit(eval('self.'+value.split()[1].strip()),unit)
+                    __begin = WithUnit(eval('self.'+value.split()[1].strip()),unit) - self.timeoffset
             elif desig == 'for':
                 try:
                     __dur = WithUnit(float(value),unit)
@@ -207,9 +208,9 @@ class ParsingWorker(QObject):
                     __freq = WithUnit(eval('self.'+value.split()[1].strip()),unit) 
             elif desig == 'at':
                 try:
-                    __begin = WithUnit(float(value),unit)
+                    __begin = WithUnit(float(value),unit) - self.timeoffset
                 except ValueError:
-                    __begin = WithUnit(eval('self.'+value.split()[1].strip()),unit)
+                    __begin = WithUnit(eval('self.'+value.split()[1].strip()),unit) - self.timeoffset
             elif desig == 'for':
                 try:
                     __dur = WithUnit(float(value),unit)
