@@ -14,6 +14,36 @@ from parsingworker import ParsingWorker
 from pulserworker import PulserWorker
 import time
 
+
+def buttonstyle(color, **kwargs):
+    if 'textcolor' in kwargs:
+        txtcolor = kwargs['textcolor']
+    else:
+        txtcolor = 'black'
+    backgroundcolor = QtGui.QColor(color)    
+    string =  "QPushButton {\n"
+    string +="color: {:};\n".format(txtcolor)
+    string +="border: 2px ;\n"
+    string +="border-radius: 5px;\n"
+    string +="padding: 5px;\n"
+    string +="background: qradialgradient(cx: 0.3, cy: -0.4,\n"
+    string +="fx: 0.3, fy: -0.4,\n"
+    string +="radius: 1.35, stop: 0 {:}, stop: 1 {:});\n".format(backgroundcolor.name(),backgroundcolor.darker().name())
+    string +="min-width: 80px;\n"
+    string +="max-width: 80px;\n"
+    string +="}\n"
+    string +="\n"
+    string +="QPushButton:hover {\n"
+    string +="background: qradialgradient(cx: 0.4, cy: 0.5,\n"
+    string +="fx: 0.3, fy: -0.4,\n"
+    string +="radius: 1.35, stop: 0 {:}, stop: 1 {:});\n".format(backgroundcolor.name(),backgroundcolor.lighter().name())
+    string +="}\n"
+    string +="\n"
+    string +="QPushButton:checked {\n"
+    string +="background: {:}\n".format(backgroundcolor.lighter().name())
+    string +="}"
+    return string
+
 class mainwindow(QtGui.QMainWindow):
     start_signal = pyqtSignal()
     stop_signal = pyqtSignal()
@@ -28,6 +58,7 @@ class mainwindow(QtGui.QMainWindow):
         self.hardwarelock = False
         self.shottimevalue = 1000
         self.updatedelayvalue = 400
+        self.setStyleSheet(buttonstyle('deepskyblue'))
 
 
     # This is a seperate function because it needs to 
@@ -139,11 +170,12 @@ class mainwindow(QtGui.QMainWindow):
     
     def makeButtonPanel(self):
         panel = QtGui.QWidget()
-        Startbutton = QtGui.QPushButton(QtGui.QIcon('icons/go-next.svg'),'RUN')
-        Stopbutton = QtGui.QPushButton(QtGui.QIcon('icons/emblem-noread.svg'),'STOP')
+        Startbutton = QtGui.QPushButton('RUN')
+        Stopbutton = QtGui.QPushButton('STOP')
         LineTrigbutton = QtGui.QPushButton('linetrig')
         LineTrigbutton.setCheckable(True)
         LineTrigbutton.setChecked(self.linetriggerstate)
+        LineTrigbutton.setStyleSheet(buttonstyle('yellow'))
         LineTrigbutton.pressed.connect(self.toggle_linetrig)
         self.ledrunning = LEDindicator('Running')
         self.ledprogramming = LEDindicator('Prog.')
@@ -184,8 +216,16 @@ class mainwindow(QtGui.QMainWindow):
         font.setPointSize(10)
         self.Messagebox.contextMenuEvent = self.messagebox_contextmenu
 
-        Startbutton.pressed.connect(self.on_Start)
-        Stopbutton.pressed.connect(self.on_Stop)
+        Startbutton.setCheckable(True)
+        Startbutton.setChecked(False)
+        Stopbutton.setCheckable(True)
+        Stopbutton.setChecked(True)
+        Startbutton.setStyleSheet(buttonstyle('green'))
+        Stopbutton.setStyleSheet(buttonstyle('red',textcolor = 'white'))
+        Stopbutton.clicked.connect(lambda bool: Startbutton.setChecked(not Startbutton.isChecked()))
+        Startbutton.clicked.connect(lambda bool: Stopbutton.setChecked(not Stopbutton.isChecked()))
+        Startbutton.clicked.connect(self.on_Start)
+        Stopbutton.clicked.connect(self.on_Stop)
         Spacetaker = QtGui.QWidget()
         ledpanel =QtGui.QFrame()
         ledpanel.setFrameStyle(1)
@@ -273,6 +313,7 @@ class mainwindow(QtGui.QMainWindow):
 
     def offset_value_changed(self,val):
         self.graphingwidget.timeoffset = val
+        self.parsingworker.timeoffset = val
 
     def messagebox_contextmenu(self,event):
         self.menu = QtGui.QMenu(self)
