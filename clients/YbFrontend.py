@@ -6,9 +6,7 @@ from twisted.internet import threads
 import threading
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvasQTAgg
 import matplotlib.pyplot as plt
-from SWITCH_CONTROL import switchWidget
 from DDS_CONTROL import DDS_CONTROL
-from LINETRIGGER_CONTROL import linetriggerWidget
 from LEDindicator import LEDindicator
 from parsingworker import ParsingWorker
 from pulserworker import PulserWorker
@@ -129,9 +127,7 @@ class mainwindow(QtGui.QMainWindow):
     #################
     def makeControlWidget(self):
         widget = QtGui.QWidget()
-        from SWITCH_CONTROL import switchWidget
         from DDS_CONTROL import DDS_CONTROL
-
         layout = QtGui.QVBoxLayout()
         try:
             pass
@@ -202,12 +198,12 @@ class mainwindow(QtGui.QMainWindow):
         shottime.setRange(0,3000)
         shottime.setValue(1000)
         updatedelay.setRange(0,3000)
-        updatedelay.setValue(400)
+        updatedelay.setValue(1)
         shottime.setSuffix(' ms')
         updatedelay.setSuffix(' ms')
         timeoffset.setSuffix(' ms')
         timeoffset.setRange(0,3000)
-        timeoffset.setValue(200)
+        timeoffset.setValue(350)
 
         self.Messagebox = QtGui.QTextEdit()
         self.Messagebox.setReadOnly(True)
@@ -310,10 +306,9 @@ class mainwindow(QtGui.QMainWindow):
         yield pv.set_parameter('Raman','confirm',ID)
         #print 'time updated id: ',time.time()
         self.messageout('Completed shot: {:}'.format(ID[1]))
-
+    
     def offset_value_changed(self,val):
         self.graphingwidget.timeoffset = val
-        self.parsingworker.timeoffset = val
 
     def messagebox_contextmenu(self,event):
         self.menu = QtGui.QMenu(self)

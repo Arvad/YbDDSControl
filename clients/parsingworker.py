@@ -39,7 +39,7 @@ class ParsingWorker(QObject):
         self.mutex = QMutex()
         self.steadystatedict = None
         self.lastannouncement = (0L,0L,0,0L,False,0.0,0.0,0.0)
-        self.timeoffset = 0
+        self.timeoffset = 350
         sys.path.append(hwconfigpath)
         global hardwareConfiguration
         from hardwareConfiguration import hardwareConfiguration
@@ -114,12 +114,13 @@ class ParsingWorker(QObject):
             for i in np.arange(begin,end,it):
                 for aline in lines.split('\n'):
                     for amatch in re.findall(r'(\(.+?\))',aline):
+                        newstring = amatch
                         if 'var' in amatch:
-                            newsubstr = str(eval(amatch.replace('var ','self.')))
-                            aline.replace(amatch,newsubstr)
-                        elif itervar in amatch:
-                            newsubstr = str(eval(amatch.replace(itervar,str(i))))
-                            aline = aline.replace(amatch,newsubstr)
+                            newstring = amatch.replace('var ','self.')
+                        if itervar in amatch:
+                             newstring = newstring.replace(itervar,str(i))
+                        newstring = str(eval(newstring))
+                        aline = aline.replace(amatch,newstring)
                     newlines += aline + '\n'
             self.parsePulses(newlines)
 
@@ -171,9 +172,9 @@ class ParsingWorker(QObject):
                     __freq = WithUnit(eval('self.'+value.split()[1].strip()),unit) 
             elif desig == 'at':
                 try:
-                    __begin = WithUnit(float(value),unit) - self.timeoffset
+                    __begin = WithUnit(float(value) - self.timeoffset,unit)
                 except ValueError:
-                    __begin = WithUnit(eval('self.'+value.split()[1].strip()),unit) - self.timeoffset
+                    __begin = WithUnit(eval('self.'+value.split()[1].strip()) - self.timeoffset,unit)
             elif desig == 'for':
                 try:
                     __dur = WithUnit(float(value),unit)
@@ -208,9 +209,9 @@ class ParsingWorker(QObject):
                     __freq = WithUnit(eval('self.'+value.split()[1].strip()),unit) 
             elif desig == 'at':
                 try:
-                    __begin = WithUnit(float(value),unit) - self.timeoffset
+                    __begin = WithUnit(float(value) - self.timeoffset,unit)
                 except ValueError:
-                    __begin = WithUnit(eval('self.'+value.split()[1].strip()),unit) - self.timeoffset
+                    __begin = WithUnit(eval('self.'+value.split()[1].strip()) - self.timeoffset,unit)
             elif desig == 'for':
                 try:
                     __dur = WithUnit(float(value),unit)
@@ -366,7 +367,6 @@ class Sequence():
     def parseDDS(self):
         if not self.userAddedDDS(): return None
         state = self._getCurrentDDS()
-        print state
         pulses_end = {}.fromkeys(state, (0, 'stop')) #time / boolean whether in a middle of a pulse 
         dds_program = {}.fromkeys(state, '')
         lastTime = 0
@@ -432,7 +432,7 @@ class Sequence():
         Normal  pulses   : [(name, start, duration, frequency, amplitude, phase, ramp_rate, amp_ramp_rate,mode)]
         Modulation pules : [(name, start, duration, frequency, amplitude, phase, freq_deviation, mod_freq,mode)]
         '''
-        value = sorted(values, key = lambda x: (x[0], x[1]))
+        values = sorted(values, key = lambda x: (x[0], x[1]))
         for i in range(len(values)):
             value = values[i]
             if i < len(values)-1:
@@ -441,9 +441,8 @@ class Sequence():
             else:
                 nextvalue = None
             name = value[0]
-            if name != nextvalue:
+            if name != nextname:
                 nextvalue = None
-
             name,start,dur,freq,ampl,phase,modespecific1,modespecific2,mode = value
             if nextvalue is not None:
                 nextname,nextstart,nextdur,nextfreq,nextampl,nextphase,nextmodespecific1,nextmodespecific2,nextmode = nextvalue
@@ -475,14 +474,15 @@ class Sequence():
         
             if nextvalue is not None:
                 freq_off = nextfreq
+                ampl_off = channel.off_parameters[1]
                 mode_off = nextmode
                 modespecific1_off = nextmodespecific1
                 modespecific2_off = nextmodespecific2
             else:
                 freq_off, ampl_off = channel.off_parameters
                 mode_off = mode
-                modespecific1_off = modespecific1
-                modespecific2_off = modespecific2
+                modespecific1_off = 0
+                modespecific2_off = 0
                 
             if freq == 0:
                 freq, ampl = freq_off,ampl_off
@@ -503,6 +503,7 @@ class Sequence():
             if not start + dur <= self.sequenceTimeRange[1]: 
                 raise Exception ("DDS start time out of acceptable input range for channel {0} at time {1}".format(name, start + dur))
             if start == 0:
+                print 'Added steadystate for: ',name
                 self.addDDS(name,start,num,'steadystate')
             elif not dur == 0:#0 length pulses are ignored
                 self.addDDS(name, start, num, 'start')

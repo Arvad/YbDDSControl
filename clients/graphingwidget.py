@@ -1,9 +1,10 @@
 from PyQt4 import QtGui
-from PyQt4.QtCore import pyqtSignal, pyqtSlot, QObject
+from PyQt4.QtCore import pyqtSignal, pyqtSlot, QObject, Qt
 from twisted.internet.defer import inlineCallbacks
 import numpy as np
 from connection import connection
 import pyqtgraph as pg
+from pyqtgraph.SignalProxy import SignalProxy
 import sys
 import time
 
@@ -21,13 +22,22 @@ class graphingwidget(QtGui.QWidget):
         self.initialize()
         self.timeoffset = 200
 
-
+        
+    def mouseMoved(self,evt):
+        pos = evt
+        if self.figure.sceneBoundingRect().contains(pos):
+            mousePoint = self.figure.plotItem.vb.mapSceneToView(pos)
+            index = int(mousePoint.x())
+            self.label.setPos(mousePoint)
+            self.label.setText("{:d}".format(int(mousePoint.x())))
+            
     def initialize(self):
         sys.path.append(self.configpath)
         global hardwareConfiguration
         from hardwareConfiguration import hardwareConfiguration
         self.ddslist = hardwareConfiguration.ddsDict
         self.do_layout()
+        self.figure.scene().sigMouseMoved.connect(self.mouseMoved)
         
 
 
@@ -51,10 +61,11 @@ class graphingwidget(QtGui.QWidget):
         self.figure.setYRange(0,17)
         self.figure.setMouseEnabled(x=False,y=False)
         self.figure.showGrid(x=True,y=True,alpha=0.4)
+        self.label = pg.TextItem(anchor=(0,1))
+        self.figure.plotItem.addItem(self.label)
 
     @pyqtSlot(list)       
     def do_sequence(self,sequence):
-        tic = time.clock()
         xdatalist = []
         ydatalist = []
         for achannelname, adds in self.ddslist.iteritems():
@@ -84,16 +95,20 @@ class graphingwidget(QtGui.QWidget):
             xdatalist.append(xdata)
             ydatalist.append(ydata)
         self.plot(xdatalist,ydatalist)
-        toc = time.clock()
-        #print "plotted ",toc-tic
-        
+     
+    
+
+
+       
         
     def plot(self,xlist,ylist):
         self.figure.clear()
+        self.figure.addItem(self.label)
         for i in range(len(xlist)):
             xdata = xlist[i]
             ydata = ylist[i]
             if len(xdata)>1:
                 self.figure.addItem(pg.PlotCurveItem(xdata,ydata,pen='w'))
+        self.figure.addItem(pg.InfiniteLine(self.timeoffset,pen=pg.mkPen('r',style=Qt.DashLine)))
 
          
