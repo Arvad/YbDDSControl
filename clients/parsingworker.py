@@ -329,12 +329,11 @@ class Sequence():
                         fullbinary += bytearray([addresse,repeat]) + currentblock
                     metablockcounter += 1
                 fullbinary[-18] = 128 + addresse
-        # import binascii
-        # for abyte in [fullbinary[i:i+18] for i in range(0, len(fullbinary), 18)]:
-            # print '------------------'
-            # print binascii.hexlify(abyte),len(abyte)
+        #import binascii
+        #for abyte in [fullbinary[i:i+18] for i in range(0, len(fullbinary), 18)]:
+        #    print '------------------'
+        #    print binascii.hexlify(abyte),len(abyte)
         fullbinary = bytearray('e000'.decode('hex'))  + fullbinary + bytearray('F000'.decode('hex'))
-        #print binascii.hexlify(fullbinary)
             
         return fullbinary, self.ttlProgram
         
@@ -370,10 +369,7 @@ class Sequence():
         pulses_end = {}.fromkeys(state, (0, 'stop')) #time / boolean whether in a middle of a pulse 
         dds_program = {}.fromkeys(state, '')
         lastTime = 0
-        #tic = time.clock()
         entries = sorted(self.ddsSettingList, key = lambda t: t[1] ) #sort by starting time
-        #toc = time.clock()
-        #print "time sorting    ",toc-tic
         possibleError = (0,'')
         while True:
             try:
@@ -440,6 +436,7 @@ class Sequence():
                 nextname = nextvalue[0]
             else:
                 nextvalue = None
+                
             name = value[0]
             if name != nextname:
                 nextvalue = None
@@ -457,8 +454,8 @@ class Sequence():
             ampl = ampl['dBm'] 
             phase = phase['deg']
             if mode == 0: #normal mode
-                modespecific1 = modespecific1['MHz'] #ramp_rate
-                modespecific2 = modespecific2['dBm'] #amp_ramp_rate
+                modespecific1 = modespecific1['MHz'] #ramp_rate        If anything different from 0, it will ramp while being off
+                modespecific2 = modespecific2['dBm'] #amp_ramp_rate    If anything different from 0, it will ramp while being off
             elif mode == 1: #modulation mode
                 modespecific1 = modespecific1['MHz'] #freq_deviation
                 modespecific2 = modespecific2['MHz'] #modulation_freq
@@ -466,8 +463,10 @@ class Sequence():
             if nextvalue is not None:
                 nextfreq = nextfreq['MHz']
                 if nextmode == 0: #normal mode
-                    nextmodespecific1 = nextmodespecific1['MHz'] #ramp_rate
-                    nextmodespecific2 = nextmodespecific2['dBm'] #amp_ramp_rate
+                    if nextmodespecific1 != 0:
+                        nextfreq = freq
+                    nextmodespecific1 = 0 #ramp_rate        If anything different from 0, it will ramp while being off
+                    nextmodespecific2 = 0 #amp_ramp_rate    If anything different from 0, it will ramp while being off
                 elif nextmode == 1: #modulation mode
                     nextmodespecific1 = nextmodespecific1['MHz'] #freq_deviation
                     nextmodespecific2 = nextmodespecific2['MHz'] #modulation_freq
@@ -482,8 +481,8 @@ class Sequence():
                 freq_off, ampl_off = channel.off_parameters
                 mode_off = mode
                 modespecific1_off = 0
-                modespecific2_off = 0
-                
+                modespecific2_off = 0   
+            print name,nextname,modespecific1_off
             if freq == 0:
                 freq, ampl = freq_off,ampl_off
             else:
