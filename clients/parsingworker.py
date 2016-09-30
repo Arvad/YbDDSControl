@@ -292,7 +292,7 @@ class Sequence():
             else:
                 valuedict[name] = [values[i][1:]]
 
-        for aname,trash in self.ddsDict.iteritems():
+        for aname in self.ddsDict.keys():
             if aname in self.steadystatedict:
                 steadystatefreq = steadystatedict[aname]['freq']
                 steadystateampl = steadystatedict[aname]['ampl']
@@ -300,8 +300,9 @@ class Sequence():
                 steadystatefreq = 0
                 steadystateampl = -37
             if aname in valuedict:
-                valuedict[aname].append((WithUnit(0,'ms'),WithUnit(0,'ms'),WithUnit(steadystatefreq,'MHz'),WithUnit(steadystateampl,'dBm'),
+                valuedict[aname].append((WithUnit(0.001,'ms'),WithUnit(0.001,'ms'),WithUnit(steadystatefreq,'MHz'),WithUnit(steadystateampl,'dBm'),
                            WithUnit(0,'deg'),WithUnit(0,'MHz'),WithUnit(0,'dBm'),0))
+                print aname
             else:
                 valuedict[aname] = [(WithUnit(0,'ms'),WithUnit(0,'ms'),WithUnit(steadystatefreq,'MHz'),WithUnit(steadystateampl,'dBm'),
                            WithUnit(0,'deg'),WithUnit(0,'MHz'),WithUnit(0,'dBm'),0)]
@@ -554,7 +555,7 @@ class Sequence():
         lastTime = 0
         entries = sorted(self.ddsSettingList, key = lambda t: t[1] ) #sort by starting time
         possibleError = (0,'')
-        print state
+        print entries
         #print state
         #print entries
         while True:
