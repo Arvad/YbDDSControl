@@ -11,10 +11,6 @@ import sys
 global harwareConfiguration
 
 class ParsingWorker(QObject):
-    parsing_done_trigger = pyqtSignal(list,int)
-    finished = pyqtSignal(int)
-    busy_trigger = pyqtSignal(bool)
-    start = pyqtSignal()
     trackingparameterserver = pyqtSignal(bool)
     parsermessages = pyqtSignal(str)
     new_sequence_trigger = pyqtSignal(list)
@@ -28,25 +24,16 @@ class ParsingWorker(QObject):
         self.context = cntx
         self.sequence = []
         self.defineRegexPatterns()
-        self.start.connect(self.run)
-        self.connectedsignal =False
         self.tracking = False
         self.trackingparameterserver.emit(self.tracking)
         self.seqID = 0
-        self.Busy = False
-        self.sequencestorage = []
         self.parameters = {}
-        self.mutex = QMutex()
         self.steadystatedict = None
         self.lastannouncement = (0L,0L,0,0L,False,0.0,0.0,0.0)
         self.timeoffset = 0
         sys.path.append(hwconfigpath)
         global hardwareConfiguration
         from hardwareConfiguration import hardwareConfiguration
-    
-    
-    def set_parameters(self,paramdict):
-        self.parameters = paramdict
         
     def update_parameters(self, value):
         self.lastannouncement = value
@@ -250,10 +237,6 @@ class ParsingWorker(QObject):
         self.trackingparameterserver.emit(self.tracking)
         self.reset_sequence_storage
     
-    
-    def reset_sequence_storage(self):
-        locker = QMutexLocker(self.mutex)
-        self.sequencestorage = []
         
     @pyqtSlot()
     def run(self,text,value = None):
@@ -299,95 +282,99 @@ class Sequence():
         Normal  pulses   : [(name, start, duration, frequency, amplitude, phase, ramp_rate, amp_ramp_rate,mode)]
         Modulation pules : [(name, start, duration, frequency, amplitude, phase, freq_excur, freq_mod,mode)]
         '''
-        values = sorted(values, key = lambda x: (x[0], x[1]))
-        print values
+        valuedict = {}
         for i in range(len(values)):
-            value = values[i]
-            if i < len(values)-1:
-                nextvalue = values[i+1]
-                nextname = nextvalue[0]
+            name = values[i][0]
+            if name in valuedict:
+                valuedict[name].append(values[i][1:])
             else:
-                nextvalue = None
+                valuedict[name] = [values[i][1:]]
+
                 
-            name = value[0]
-            if name != nextname:
-                nextvalue = None
-            name,start,dur,freq,ampl,phase,modespecific1,modespecific2,mode = value
-            if nextvalue is not None:
-                nextname,nextstart,nextdur,nextfreq,nextampl,nextphase,nextmodespecific1,nextmodespecific2,nextmode = nextvalue
+        for aname,alist in valuedict.iteritems():
+            values = sorted(alist, key = lambda x: x[0])
 
-            try:
-                channel = self.ddsDict[name]
-            except KeyError:
-                raise Exception("Unknown DDS channel {}".format(name))
-            start = start['s']
-            dur = dur['s']
-            freq = freq['MHz']
-            ampl = ampl['dBm'] 
-            phase = phase['deg']
-            if mode == 0: #normal mode
-                modespecific1 = modespecific1['MHz'] #ramp_rate        If anything different from 0, it will ramp while being off
-                modespecific2 = modespecific2['dBm'] #amp_ramp_rate    If anything different from 0, it will ramp while being off
-            elif mode == 1: #modulation mode
-                modespecific1 = modespecific1['MHz'] #freq_excur
-                modespecific2 = modespecific2['MHz'] #Freq_mod
+            for i in range(len(values)):
+                value = values[i]
+                if i < len(values)-1:
+                    nextvalue = values[i+1]
+                else:
+                    nextvalue = None
+                    
+                
+                start,dur,freq,ampl,phase,modespecific1,modespecific2,mode = value
+                if nextvalue is not None:
+                    nextstart,nextdur,nextfreq,nextampl,nextphase,nextmodespecific1,nextmodespecific2,nextmode = nextvalue
 
-            if nextvalue is not None:
-                nextfreq = nextfreq['MHz']
-                if nextmode == 0: #normal mode
-                    if nextmodespecific1 != 0:
-                        nextfreq = freq
-                    nextmodespecific1 = 0 #ramp_rate        If anything different from 0, it will ramp while being off
-                    nextmodespecific2 = 0 #amp_ramp_rate    If anything different from 0, it will ramp while being off
-                elif nextmode == 1: #modulation mode
-                    nextmodespecific1 = nextmodespecific1['MHz'] #freq_excur
-                    nextmodespecific2 = nextmodespecific2['MHz'] #Freq_mod
-        
-            if nextvalue is not None:
-                freq_off = nextfreq
-                ampl_off = channel.off_parameters[1]
-                mode_off = nextmode
-                modespecific1_off = nextmodespecific1
-                modespecific2_off = nextmodespecific2
-            else:
-                freq_off, ampl_off = channel.off_parameters
-                mode_off = mode
-                modespecific1_off = 0
-                modespecific2_off = 0   
-            if freq == 0:
-                freq, ampl = freq_off,ampl_off
-            else:
-                if not channel.allowedfreqrange[0] <= freq <=channel.allowedfreqrange[1]: raise Exception ("channel {0} : Frequeny of {1} is outside the allowed range".format(channel.name, freq))
-                if not channel.allowedamplrange[0] <= ampl <=channel.allowedamplrange[1]: raise Exception ("channel {0} : Amplitude of {1} is outside the allowed range".format(channel.name, freq))
+                try:
+                    channel = self.ddsDict[aname]
+                except KeyError:
+                    raise Exception("Unknown DDS channel {}".format(aname))
+                start = start['s']
+                dur = dur['s']
+                freq = freq['MHz']
+                ampl = ampl['dBm'] 
+                phase = phase['deg']
+                if mode == 0: #normal mode
+                    modespecific1 = modespecific1['MHz'] #ramp_rate        If anything different from 0, it will ramp while being off
+                    modespecific2 = modespecific2['dBm'] #amp_ramp_rate    If anything different from 0, it will ramp while being off
+                elif mode == 1: #modulation mode
+                    modespecific1 = modespecific1['MHz'] #freq_excur
+                    modespecific2 = modespecific2['MHz'] #Freq_mod
+
+                if nextvalue is not None:
+                    nextfreq = nextfreq['MHz']
+                    if nextmode == 0: #normal mode
+                        if nextmodespecific1 != 0:
+                            nextfreq = freq
+                        nextmodespecific1 = 0 #ramp_rate        If anything different from 0, it will ramp while being off
+                        nextmodespecific2 = 0 #amp_ramp_rate    If anything different from 0, it will ramp while being off
+                    elif nextmode == 1: #modulation mode
+                        nextmodespecific1 = nextmodespecific1['MHz'] #freq_excur
+                        nextmodespecific2 = nextmodespecific2['MHz'] #Freq_mod
+            
+                if nextvalue is not None:
+                    freq_off = nextfreq
+                    ampl_off = channel.off_parameters[1]
+                    mode_off = nextmode
+                    modespecific1_off = nextmodespecific1
+                    modespecific2_off = nextmodespecific2
+                else:
+                    freq_off, ampl_off = channel.off_parameters
+                    mode_off = mode
+                    modespecific1_off = 0
+                    modespecific2_off = 0   
+                if freq == 0:
+                    freq, ampl = freq_off,ampl_off
+                else:
+                    if not channel.allowedfreqrange[0] <= freq <=channel.allowedfreqrange[1]: raise Exception ("channel {0} : Frequeny of {1} is outside the allowed range".format(channel.name, freq))
+                    if not channel.allowedamplrange[0] <= ampl <=channel.allowedamplrange[1]: raise Exception ("channel {0} : Amplitude of {1} is outside the allowed range".format(channel.name, freq))
 
 
-            num = self.settings_to_int(channel, freq, ampl,  mode,phase, modespecific1, modespecific2)
-            #note that keeping the frequency the same when switching off to preserve phase coherence
-            num_off = self.settings_to_int(channel, freq_off, ampl_off,  mode_off, phase, modespecific1_off, modespecific2_off)   
-            #note < sign, because start can not be 0. 
-            #this would overwrite the 0 position of the ram, and cause the dds to change before pulse sequence is launched
-            if not start <= self.sequenceTimeRange[1]: 
-                raise Exception ("DDS start time out of acceptable input range for channel {0} at time {1}".format(name, start))
-            if not start + dur <= self.sequenceTimeRange[1]: 
-                raise Exception ("DDS start time out of acceptable input range for channel {0} at time {1}".format(name, start + dur))
-            if start == 0:
-                print 'Added steadystate for: ',name
-                self.addDDS(name,start,num,'steadystate')
-            elif not dur == 0:#0 length pulses are ignored
-                self.addDDS(name, start, num, 'start')
-                self.addDDS(name, start + dur, num_off, 'stop')
+                num = self.settings_to_int(channel, freq, ampl,  mode,phase, modespecific1, modespecific2)
+                #note that keeping the frequency the same when switching off to preserve phase coherence
+                num_off = self.settings_to_int(channel, freq_off, ampl_off,  mode_off, phase, modespecific1_off, modespecific2_off)   
+                #note < sign, because start can not be 0. 
+                #this would overwrite the 0 position of the ram, and cause the dds to change before pulse sequence is launched
+                if not start <= self.sequenceTimeRange[1]: 
+                    raise Exception ("DDS start time out of acceptable input range for channel {0} at time {1}".format(aname, start))
+                if not start + dur <= self.sequenceTimeRange[1]: 
+                    raise Exception ("DDS start time out of acceptable input range for channel {0} at time {1}".format(aname, start + dur))
+                if start == 0:
+                    raise Exeption ("DDS start time is zero for hannel {0}! This will override the steady state setting. Please start your pulse later".format(aname))
+                elif not dur == 0:#0 length pulses are ignored
+                    self.addDDS(aname, start, num, 'start')
+                    self.addDDS(aname, start + dur, num_off, 'stop')
 
     def addDDS(self, name, start, num, typ):
-        timeStep = self.secToStep(start)
+        #Convert startime to integer
+        sec = '{0:.9f}'.format(start) #round to nanoseconds
+        sec= Decimal(sec) #convert to decimal 
+        timeStep = ( sec / self.timeResolution).to_integral_value()
+        timeStep = int(timeStep)
+        #Add dds with starttime represented as an integer number of timesteps
         self.ddsSettingList.append((name, timeStep, num, typ))
 
-    def secToStep(self, sec):
-        '''converts seconds to time steps'''
-        start = '{0:.9f}'.format(sec) #round to nanoseconds
-        start = Decimal(start) #convert to decimal 
-        step = ( start / self.timeResolution).to_integral_value()
-        step = int(step)
-        return step
 
 ########################################################################
 #########                                                      #########
@@ -428,8 +415,8 @@ class Sequence():
 
             for val, rng, precision, extrabits in [(phase,              phaserange, 16, False),
                                                     (ampl,               amplrange, 16, True),
-                                                    (ramp_rate,          ramprange, 16, False),
                                                     (amp_ramp_rate, amp_ramp_range, 16, False),
+                                                    (ramp_rate,          ramprange, 16, False),
                                                     (freq,               freqrange, 64, False)]:
                 minim,maxim = rng                                    
                 resolution = (maxim - minim) / float(2**precision - 1)
@@ -439,7 +426,7 @@ class Sequence():
                     tmp = (num//(2**(i*8)))%256
                     if extrabits:
                         if i == 0:
-                            tmp = tmp & int('11111100',2) # Masks out the last two bits of the amplitude, indicated mode 0
+                            tmp = tmp & 0b11111100 # Masks out the last two bits of the amplitude, indicated mode 0
                     b[i] = tmp
                 #import binascii
                 #print binascii.hexlify(b)
@@ -468,77 +455,14 @@ class Sequence():
                     tmp = (num//(2**(i*8)))%256
                     if extrabits:
                         if i == 0:
-                            tmp = tmp & int('11111100',2) # Masks out the last two bits of the amplitude, indicated mode 1
-                            tmp = tmp | int('00000001',2)
+                            tmp = tmp & 0b11111100 # Masks out the last two bits of the amplitude, indicated mode 1
+                            tmp = tmp | 0b00000001
                     b[i] = tmp
-                import binascii
-                print binascii.hexlify(b)
                 bytearr += b
                 
         return bytearr
     
-    
 
-    def _intToBuf(self, num):
-        '''
-        takes the integer representing the setting and returns the buffer string for dds programming
-        '''
-        ans = 0
-        mode = num // 2**64 %2
-        #phase
-        phase_num = (num // 2**80)%(2**16)
-        phase = bytearray(2)
-        phase[0] = phase_num%256
-        phase[1] = (phase_num//256)%256
-        
-        
-        ### amplitude
-        ampl_num = (num // 2**64)%(2**16)
-        amp = bytearray(2)
-        amp[0] = ampl_num%256
-        amp[1] = (ampl_num//256)%256
-        
-        if mode in [0,2]:
-            freq_num = (num % 2**64)  # change according to the new DDS which supports 64 bit tuning of the frequency. Used to be #freq_num = (num % 2**32)*2**32
-            b = bytearray(8)          # initialize the byte array to sent to the pusler later
-            for i in range(8):
-                b[i]=(freq_num//(2**(i*8)))%256
-            
-           
-            ### ramp rate. 16 bit tunability from roughly 116 Hz/ms to 7.5 MHz/ms 
-            ramp_rate = (num // 2**96)%(2**16)
-            ramp = bytearray(2)
-            ramp[0] = ramp_rate%256
-            ramp[1] = (ramp_rate//256)%256
-            
-            ##  amplitude ramp rate
-            amp_ramp_rate = (num // 2**112)%(2**16)
-            #print "amp_ramp is" , amp_ramp_rate
-            amp_ramp = bytearray(2)
-            amp_ramp[0] = amp_ramp_rate%256
-            amp_ramp[1] = (amp_ramp_rate//256)%256
-            
-            ##a = bytearray.fromhex(u'0000') + amp + bytearray.fromhex(u'0000 0000')
-            ans = phase + amp + amp_ramp + ramp + b
-        elif mode == 1: #frequency modulation mode
-            low_ramp = (num%(2**32))
-            low = bytearray(4)
-            for i in range(4):
-                low[i]=(low_ramp//(2**(i*8)))%256
-            
-            high_ramp = (num // 2**32) % (2 **32)
-            high = bytearray(4)
-            for i in range(4):
-                high[i]=(high_ramp//(2**(i*8)))%256
-            
-            freq_step = (num // 2**96)%(2**32)
-            freq_s = bytearray(4)
-            for i in range(4):
-                freq_s[i]=(freq_step//(2**(i*8)))%256
-            ans = phase + amp + freq_s + high + low  
-        
-        return ans
-        
     def _addNewSwitch(self, timeStep, chan, value):
         if self.switchingTimes.has_key(timeStep):
             if self.switchingTimes[timeStep][chan]: raise Exception ('Double switch at time {} for channel {}'.format(timeStep, chan))
@@ -594,9 +518,6 @@ class Sequence():
         d = dict([(name,self._channel_to_num(channel)) for (name,channel) in self.ddsDict.iteritems()])
         return d
     
-    def _getSteadyStateDDS(self):
-        d = dict([(name,self._channel_to_num(channel)) for (name,channel) in self.ddsDict.iteritems()])
-        return d
 
     def _channel_to_num(self, channel):
         '''returns the current state of the channel in the num represenation'''
@@ -617,6 +538,8 @@ class Sequence():
         lastTime = 0
         entries = sorted(self.ddsSettingList, key = lambda t: t[1] ) #sort by starting time
         possibleError = (0,'')
+        #print state
+        #print entries
         while True:
             try:
                 name,start,num,typ = entries.pop(0)
