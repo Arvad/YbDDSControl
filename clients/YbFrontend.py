@@ -190,7 +190,7 @@ class mainwindow(QtGui.QMainWindow):
         filetoolbar.addAction(QtGui.QIcon('icons/document-save.svg'),'save',self.savebuttonclick)
         filetoolbar.addAction(QtGui.QIcon('icons/document-new.svg'),'new',self.newbuttonclick)
 
-        shottime.valueChanged.connect(lambda val: setattr(self,"shottimevalue",val/1000.))
+        shottime.valueChanged.connect(self.shottime_value_changed)
         updatedelay.valueChanged.connect(lambda val: setattr(self,"updatedelayvalue",val/1000.))
         timeoffset.valueChanged.connect(self.offset_value_changed)
 
@@ -309,6 +309,12 @@ class mainwindow(QtGui.QMainWindow):
     
     def offset_value_changed(self,val):
         self.graphingwidget.timeoffset = val
+        self.parsingworker.timeoffset = val
+
+    def shottime_value_changed(self,val):
+        self.shottimevalue = val
+        self.parsingworker.sequencetimelength = val
+
 
     def messagebox_contextmenu(self,event):
         self.menu = QtGui.QMenu(self)
@@ -413,10 +419,10 @@ class mainwindow(QtGui.QMainWindow):
             yield pulser.new_sequence()
             check = yield pulser.program_dds_and_ttl(binary,ttl)
             yield pulser.start_single()
-            started = yield pulser.wait_sequence_started(self.shottimevalue)
+            started = yield pulser.wait_sequence_started(self.shottimevalue/1000.)
             reactor.callLater(self.updatedelayvalue,self.run)
             if started:
-                completed = yield pulser.wait_sequence_done(self.shottimevalue)
+                completed = yield pulser.wait_sequence_done(self.shottimevalue/1000.)
             counts = yield pulser.get_metablock_counts()
             yield pulser.stop_sequence()
             if not started or not completed:

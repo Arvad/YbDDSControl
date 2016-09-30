@@ -31,6 +31,7 @@ class ParsingWorker(QObject):
         self.steadystatedict = {}
         self.lastannouncement = (0L,0L,0,0L,False,0.0,0.0,0.0)
         self.timeoffset = 0
+        self.sequencetimelength = 1000
         sys.path.append(hwconfigpath)
         global hardwareConfiguration
         from hardwareConfiguration import hardwareConfiguration
@@ -222,7 +223,7 @@ class ParsingWorker(QObject):
     
     def get_binary_repres(self):
         self.new_sequence_trigger.emit(self.sequence)
-        seqObject = Sequence(self.ddsDict,self.steadystatedict)
+        seqObject = Sequence(self.ddsDict,self.steadystatedict,self.sequencetimelength)
         seqObject.addDDSPulses(self.sequence)
         tic = time.clock()
         binary,ttl = seqObject.progRepresentation()
@@ -248,13 +249,14 @@ class ParsingWorker(QObject):
         
 class Sequence():
     """Sequence for programming pulses"""
-    def __init__(self,ddsDict,steadystatedict):
+    def __init__(self,ddsDict,steadystatedict,sequencetimelength):
         self.channelTotal = hardwareConfiguration.channelTotal
         self.timeResolution = Decimal(hardwareConfiguration.timeResolution)
         self.MAX_SWITCHES = hardwareConfiguration.maxSwitches
         self.resetstepDuration = hardwareConfiguration.resetstepDuration
         self.ddsDict = ddsDict
         self.steadystatedict = steadystatedict
+        self.sequenceTimeLength = sequencetimelength
 
         #dictionary in the form time:which channels to switch
         #time is expressed as timestep with the given resolution
@@ -300,15 +302,15 @@ class Sequence():
                 steadystatefreq = 0
                 steadystateampl = -37
             if aname in valuedict:
-                valuedict[aname].append((WithUnit(0.001,'ms'),WithUnit(0.001,'ms'),WithUnit(steadystatefreq,'MHz'),WithUnit(steadystateampl,'dBm'),
+                valuedict[aname].append((WithUnit(0,'ms'),WithUnit(0,'ms'),WithUnit(steadystatefreq,'MHz'),WithUnit(steadystateampl,'dBm'),
                            WithUnit(0,'deg'),WithUnit(0,'MHz'),WithUnit(0,'dBm'),0))
-                print aname
             else:
                 valuedict[aname] = [(WithUnit(0,'ms'),WithUnit(0,'ms'),WithUnit(steadystatefreq,'MHz'),WithUnit(steadystateampl,'dBm'),
                            WithUnit(0,'deg'),WithUnit(0,'MHz'),WithUnit(0,'dBm'),0)]
             
 
         for aname,alist in valuedict.iteritems():
+            truncate = False
             values = sorted(alist, key = lambda x: x[0])
 
             for i in range(len(values)):
@@ -332,6 +334,13 @@ class Sequence():
                 freq = freq['MHz']
                 ampl = ampl['dBm'] 
                 phase = phase['deg']
+
+                print aname
+                if (start + dur) > self.sequenceTimeLength/1000.:
+                    dur = self.sequenceTimeLength/1000. - start
+                    truncate = True
+                    
+
                 if mode == 0: #normal mode
                     modespecific1 = modespecific1['MHz'] #ramp_rate        If anything different from 0, it will ramp while being off
                     modespecific2 = modespecific2['dBm'] #amp_ramp_rate    If anything different from 0, it will ramp while being off
@@ -378,17 +387,23 @@ class Sequence():
                 if not start + dur <= self.sequenceTimeRange[1]: 
                     raise Exception ("DDS start time out of acceptable input range for channel {0} at time {1}".format(aname, start + dur))
                 if start == 0:
-                    self.initialdict[aname] = num
+                    self.addDDS(aname, start, num, 'begin')
                 elif not dur == 0:#0 length pulses are ignored
                     self.addDDS(aname, start, num, 'start')
                     self.addDDS(aname, start + dur, num_off, 'stop')
+                if truncate: 
+                    break
 
     def addDDS(self, name, start, num, typ):
         #Convert startime to integer
-        sec = '{0:.9f}'.format(start) #round to nanoseconds
-        sec= Decimal(sec) #convert to decimal 
-        timeStep = ( sec / self.timeResolution).to_integral_value()
-        timeStep = int(timeStep)
+        if start == 0:              #This is changed to 1 because this means the first thing the pulser will do after a trigger
+            timeStep = 1            #is do change to this setting. The value 0 is actually never hit by the pulser counter
+                                    #and can therefore not be used to provoke changes. It is solely used for steadystate pulses.
+        else:
+            sec = '{0:.9f}'.format(start) #round to nanoseconds
+            sec= Decimal(sec) #convert to decimal 
+            timeStep = ( sec / self.timeResolution).to_integral_value()
+            timeStep = int(timeStep)
         #Add dds with starttime represented as an integer number of timesteps
         self.ddsSettingList.append((name, timeStep, num, typ))
 
@@ -556,8 +571,6 @@ class Sequence():
         entries = sorted(self.ddsSettingList, key = lambda t: t[1] ) #sort by starting time
         possibleError = (0,'')
         print entries
-        #print state
-        #print entries
         while True:
             try:
                 name,start,num,typ = entries.pop(0)
@@ -570,6 +583,15 @@ class Sequence():
                 #add termination
                 #at the end of the sequence, reset dds
                 lastTTL = max(self.switchingTimes.keys())
+                sec = '{0:.9f}'.format(self.sequenceTimeLength/1000.) #round to nanoseconds
+                sec= Decimal(sec) #convert to decimal 
+                tmpTime = ( sec / self.timeResolution).to_integral_value()
+                
+                if lastTTL > (int(tmpTime) + self.resetstepDuration):
+                    print lastTTL, int(tmpTime)
+                    print 'switches exceed sequence length, truncated'
+                    lastTTL = int(tmpTime)
+
                 self._addNewSwitch(lastTTL ,self.resetDDS, 1 )
                 self._addNewSwitch(lastTTL + self.resetstepDuration ,self.resetDDS,-1)
                 return dds_program
@@ -577,6 +599,7 @@ class Sequence():
             if start > lastTime:
                 #the time has advanced, so need to program the previous state
                 if possibleError[0] == lastTime and len(possibleError[1]): raise Exception(possibleError[1]) #if error exists and belongs to that time
+                print lastTime
                 self.addToProgram(dds_program, state)
                 if not lastTime == 0:
                     self._addNewSwitch(lastTime,self.advanceDDS,1)
