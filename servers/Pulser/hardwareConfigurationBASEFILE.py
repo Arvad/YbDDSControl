@@ -28,9 +28,10 @@ class ddsConfiguration(object):
         self.time_step = 4
         self.lattice_parameter = [4000,4000,4]
         self.state = True
-        self.boardfreqrange = args.get('boardfreqrange', (0.0, 2000.0))
-        self.boardramprange = args.get('boardramprange', (0.000113687, 7.4505806))
-        self.board_amp_ramp_range = args.get('board_amp_ramp_range', (0.00174623, 22.8896))
+        #Chaning the following numbers ruins the conversion from values to binary strings
+        self.boardfreqrange = args.get('boardfreqrange', (0.0, 2000.0)) 
+        self.boardramprange = args.get('boardramprange', (0.000113687, 7.4505806)) 
+        self.board_amp_ramp_range = args.get('board_amp_ramp_range', (0.00174623, 22.8896)) 
         self.boardamplrange = args.get('boardamplrange', (-37.0, 17.0))
         self.boardphaserange = args.get('boardphaserange', (0.0, 360.0))
         self.off_parameters = args.get('off_parameters', (0.0, -37.0))
