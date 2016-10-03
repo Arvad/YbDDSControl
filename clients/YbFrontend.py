@@ -261,7 +261,6 @@ class mainwindow(QtGui.QMainWindow):
     
     def setup_parser(self):
         self.parsingworker = ParsingWorker(self.hwconfigpath,str(self.writingwidget.toPlainText()),self.reactor,self.connection,self.context)
-        self.parsingworker.busy_trigger.connect(self.ledparsing.setState)
         self.parsingworker.parsermessages.connect(self.messageout)
         self.parsingworker.new_sequence_trigger.connect(self.graphingwidget.do_sequence)
         

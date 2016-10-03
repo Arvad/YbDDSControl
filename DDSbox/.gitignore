@@ -44,7 +44,6 @@ Python_files/servers/pulser/test/timingstest.py
 Python_files/servers/pulser/test/timingstest2.py
 GUITesting/
 Python_files/servers/pulser/test/
-*.qpf
 Python_files/LabRAD.ini
 Python_files/servers/registry/Servers.dir/Parameter Vault.dir/
 Python_files/servers/dummyLABVIEW.py

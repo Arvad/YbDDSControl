@@ -457,9 +457,9 @@ begin
 	
 	---- sample and condition the "step_to_next_value" signal from the pulser
 	
-	process (dds_step_to_next_freq, clk_dds)
+	process (dds_step_to_next_freq, clk_50)
 	begin
-		if rising_edge(clk_dds) then
+		if rising_edge(clk_50) then
 			if (dds_step_to_next_freq = '1') then
 				dds_step_to_next_freq_sampled <= '1';
 			else

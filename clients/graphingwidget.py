@@ -59,13 +59,13 @@ class graphingwidget(QtGui.QWidget):
         for adds,config in self.ddslist.iteritems():
             self.figure.addItem(pg.PlotCurveItem(range(10),[1]*10,pen='w'))
         self.figure.setYRange(0,17)
-        self.figure.setMouseEnabled(x=False,y=False)
+        self.figure.setMouseEnabled(y=False)
         self.figure.showGrid(x=True,y=True,alpha=0.4)
         self.label = pg.TextItem(anchor=(0,1))
         self.figure.plotItem.addItem(self.label)
 
-    @pyqtSlot(list)       
-    def do_sequence(self,sequence):
+    @pyqtSlot(list,int,list)       
+    def do_sequence(self,sequence,timelength,steadystatenames):
         xdatalist = []
         ydatalist = []
         for achannelname, adds in self.ddslist.iteritems():
@@ -75,15 +75,21 @@ class graphingwidget(QtGui.QWidget):
             endtimes = []
             frequencies = []
             amplitudes = []
+            if achannelname in steadystatenames:
+                starttimes.append(-50)
+                endtimes.append(0)
             for apulse in channelpulses:
                 starttimes.append(apulse[1]['ms'])
                 endtimes.append((apulse[1]+ apulse[2])['ms'])
-            
             yhigh = 0.75+adds.channelnumber
             ylow = 0.25+adds.channelnumber
-
-            xdata = [self.timeoffset]
-            ydata = [ylow]
+            
+            if len(starttimes) < 0:
+                xdata = [starttimes[0]+self.timeoffset]
+                ydata = [yhigh]
+            else:
+                xdata = [self.timeoffset]
+                ydata = [ylow]
             for i in range(len(starttimes)):
                 xdata += [starttimes[i]+self.timeoffset]*2 + [endtimes[i]+self.timeoffset]*2
                 
@@ -91,15 +97,12 @@ class graphingwidget(QtGui.QWidget):
                     ydata += [ylow,yhigh,yhigh,ylow]
                 else:
                     ydata += [yhigh,ylow,ylow,yhigh]
-            
+            xdata.append(timelength)
+            ydata.append(ylow)
             xdatalist.append(xdata)
             ydatalist.append(ydata)
         self.plot(xdatalist,ydatalist)
-     
-    
-
-
-       
+      
         
     def plot(self,xlist,ylist):
         self.figure.clear()

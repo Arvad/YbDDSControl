@@ -13,7 +13,7 @@ global harwareConfiguration
 class ParsingWorker(QObject):
     trackingparameterserver = pyqtSignal(bool)
     parsermessages = pyqtSignal(str)
-    new_sequence_trigger = pyqtSignal(list)
+    new_sequence_trigger = pyqtSignal(list,int,list)
 
 
     def __init__(self,hwconfigpath,text,reactor,connection,cntx):
@@ -30,7 +30,7 @@ class ParsingWorker(QObject):
         self.parameters = {}
         self.steadystatedict = {}
         self.lastannouncement = (0L,0L,0,0L,False,0.0,0.0,0.0)
-        self.timeoffset = 0
+        self.timeoffset = 350
         self.sequencetimelength = 1000
         sys.path.append(hwconfigpath)
         global hardwareConfiguration
@@ -111,6 +111,7 @@ class ParsingWorker(QObject):
             self.parsePulses(newlines)
 
     def parseSteadystate(self,listofstrings):
+        self.steadystatedict = {}
         from labrad.units import WithUnit
         for block in listofstrings:
             for line in block.strip().split('\n'):
@@ -129,6 +130,13 @@ class ParsingWorker(QObject):
                         except ValueError:
                             __amp = WithUnit(float(value),unit)
                 self.steadystatedict[name[0]] = {'freq': __freq['MHz'], 'ampl':__amp['dBm']}
+        for aname in self.ddsDict.keys():
+            if aname in self.steadystatedict:
+                self.ddsDict[aname].frequency = self.steadystatedict[aname]['freq']
+                self.ddsDict[aname].amplitude = self.steadystatedict[aname]['ampl']
+            else:
+                self.ddsDict[aname].frequency = 0
+                self.ddsDict[aname].amplitude = -37
 
     def parsePulses(self,blockoftext):
         if len(blockoftext.strip())==0:
@@ -222,9 +230,9 @@ class ParsingWorker(QObject):
     
     
     def get_binary_repres(self):
-        self.new_sequence_trigger.emit(self.sequence)
+        self.new_sequence_trigger.emit(self.sequence,self.sequencetimelength,self.steadystatedict.keys())
         seqObject = Sequence(self.ddsDict,self.steadystatedict,self.sequencetimelength)
-        seqObject.addDDSPulses(self.sequence)
+        graphsequence = seqObject.addDDSPulses(self.sequence)
         tic = time.clock()
         binary,ttl = seqObject.progRepresentation()
         
@@ -295,23 +303,20 @@ class Sequence():
                 valuedict[name] = [values[i][1:]]
 
         for aname in self.ddsDict.keys():
-            if aname in self.steadystatedict:
-                steadystatefreq = steadystatedict[aname]['freq']
-                steadystateampl = steadystatedict[aname]['ampl']
-            else:
-                steadystatefreq = 0
-                steadystateampl = -37
             if aname in valuedict:
-                valuedict[aname].append((WithUnit(0,'ms'),WithUnit(0,'ms'),WithUnit(steadystatefreq,'MHz'),WithUnit(steadystateampl,'dBm'),
+                if any([x[0] == 0 for x in valuedict[aname]]):
+                    pass
+                else:
+                    valuedict[aname].append((WithUnit(0,'ms'),WithUnit(0,'ms'),WithUnit(0,'MHz'),WithUnit(-37,'dBm'),
                            WithUnit(0,'deg'),WithUnit(0,'MHz'),WithUnit(0,'dBm'),0))
             else:
-                valuedict[aname] = [(WithUnit(0,'ms'),WithUnit(0,'ms'),WithUnit(steadystatefreq,'MHz'),WithUnit(steadystateampl,'dBm'),
+                valuedict[aname] = [(WithUnit(0,'ms'),WithUnit(0,'ms'),WithUnit(0,'MHz'),WithUnit(-37,'dBm'),
                            WithUnit(0,'deg'),WithUnit(0,'MHz'),WithUnit(0,'dBm'),0)]
-            
-
+                           
         for aname,alist in valuedict.iteritems():
             truncate = False
             values = sorted(alist, key = lambda x: x[0])
+            
 
             for i in range(len(values)):
                 value = values[i]
@@ -335,7 +340,6 @@ class Sequence():
                 ampl = ampl['dBm'] 
                 phase = phase['deg']
 
-                print aname
                 if (start + dur) > self.sequenceTimeLength/1000.:
                     dur = self.sequenceTimeLength/1000. - start
                     truncate = True
@@ -381,18 +385,23 @@ class Sequence():
                 #note that keeping the frequency the same when switching off to preserve phase coherence
                 num_off = self.settings_to_int(channel, freq_off, ampl_off,  mode_off, phase, modespecific1_off, modespecific2_off)   
                 #note < sign, because start can not be 0. 
-                #this would overwrite the 0 position of the ram, and cause the dds to change before pulse sequence is launched
+                    #this would overwrite the 0 position of the ram, and cause the dds to change before pulse sequence is launched
                 if not start <= self.sequenceTimeRange[1]: 
                     raise Exception ("DDS start time out of acceptable input range for channel {0} at time {1}".format(aname, start))
                 if not start + dur <= self.sequenceTimeRange[1]: 
                     raise Exception ("DDS start time out of acceptable input range for channel {0} at time {1}".format(aname, start + dur))
                 if start == 0:
-                    self.addDDS(aname, start, num, 'begin')
+                    if dur != 0:
+                        self.addDDS(aname, start, num, 'start')
+                        self.addDDS(aname, start + dur, num, 'stop')
+                    else:
+                        self.addDDS(aname, start, num, 'begin')
                 elif not dur == 0:#0 length pulses are ignored
                     self.addDDS(aname, start, num, 'start')
                     self.addDDS(aname, start + dur, num_off, 'stop')
                 if truncate: 
                     break
+        return valuedict
 
     def addDDS(self, name, start, num, typ):
         #Convert startime to integer
@@ -532,12 +541,11 @@ class Sequence():
                         fullbinary += bytearray([addresse,repeat]) + currentblock
                     metablockcounter += 1
                 fullbinary[-18] = 128 + addresse
-        import binascii
-        for abyte in [fullbinary[i:i+18] for i in range(0, len(fullbinary), 18)]:
-            print '------------------'
-            print binascii.hexlify(abyte),len(abyte)
+        #import binascii
+        #for abyte in [fullbinary[i:i+18] for i in range(0, len(fullbinary), 18)]:
+        #    print '------------------'
+        #    print binascii.hexlify(abyte),len(abyte)
         fullbinary = bytearray('e000'.decode('hex'))  + fullbinary + bytearray('F000'.decode('hex'))
-        print self.switches
         return fullbinary, self.ttlProgram
         
     def userAddedDDS(self):
@@ -570,7 +578,6 @@ class Sequence():
         lastTime = 0
         entries = sorted(self.ddsSettingList, key = lambda t: t[1] ) #sort by starting time
         possibleError = (0,'')
-        print entries
         while True:
             try:
                 name,start,num,typ = entries.pop(0)
@@ -586,7 +593,7 @@ class Sequence():
                 sec = '{0:.9f}'.format(self.sequenceTimeLength/1000.) #round to nanoseconds
                 sec= Decimal(sec) #convert to decimal 
                 tmpTime = ( sec / self.timeResolution).to_integral_value()
-                
+                lastTTL = tmpTime
                 if lastTTL > (int(tmpTime) + self.resetstepDuration):
                     print lastTTL, int(tmpTime)
                     print 'switches exceed sequence length, truncated'
@@ -599,7 +606,6 @@ class Sequence():
             if start > lastTime:
                 #the time has advanced, so need to program the previous state
                 if possibleError[0] == lastTime and len(possibleError[1]): raise Exception(possibleError[1]) #if error exists and belongs to that time
-                print lastTime
                 self.addToProgram(dds_program, state)
                 if not lastTime == 0:
                     self._addNewSwitch(lastTime,self.advanceDDS,1)
