@@ -1,6 +1,6 @@
 from PyQt4 import QtGui
 from PyQt4 import QtCore
-from PyQt4.QtCore import pyqtSignal,QThread, QObject, QEventLoop, QWaitCondition, QTimer, Qt
+from PyQt4.QtCore import pyqtSignal,QThread, QObject, QEventLoop, QWaitCondition, QTimer, Qt, QSettings
 from twisted.internet.defer import inlineCallbacks, Deferred
 from twisted.internet import threads
 import threading
@@ -55,8 +55,9 @@ class mainwindow(QtGui.QMainWindow):
         self.text = ""
         self.hardwarelock = False
         self.shottimevalue = 1000
-        self.updatedelayvalue = 400
+        self.updatedelayvalue = 200
         self.setStyleSheet(buttonstyle('deepskyblue'))
+        self.restoreGui()
 
 
     # This is a seperate function because it needs to 
@@ -111,7 +112,26 @@ class mainwindow(QtGui.QMainWindow):
         self.setCentralWidget(centralwidget)
 
     def closeEvent(self,event):
+        settings = QSettings('settings.ini',QSettings.IniFormat)
+        for aspinbox in self.findChildren(QtGui.QDoubleSpinBox) + self.findChildren(QtGui.QSpinBox):
+            name = aspinbox.objectName()
+            value= aspinbox.value()
+            settings.setValue(name,value)
+
+        settings.sync()
+
         self.reactor.stop()
+
+    def restoreGui(self):
+        settings = QSettings('settings.ini',QSettings.IniFormat)
+        settings.setFallbacksEnabled(False)
+
+        for aspinbox in self.findChildren(QtGui.QDoubleSpinBox) + self.findChildren(QtGui.QSpinBox):
+            name = aspinbox.objectName()
+            if settings.contains(name):
+                value= settings.value(name).toFloat()[0]
+                aspinbox.setValue(value)
+
   
     #################
     # Spectrum plotting tab panel
@@ -142,12 +162,19 @@ class mainwindow(QtGui.QMainWindow):
     #################
     def makeSequenceWidget(self):
         from graphingwidget import graphingwidget
+        from SyntaxHighlighter import MyHighlighter
         self.filename = None
         splitterwidget = QtGui.QSplitter()
-        string = "Channel DDS_2 do 200 MHz with 9 dBm for 1 ms at 1 ms in mode Normal\nChannel DDS_2 do 200 MHz with 9 dBm for 1 ms at 3 ms in mode Normal"        
         self.graphingwidget = graphingwidget(self.reactor,self.hwconfigpath)
         self.writingwidget = QtGui.QTextEdit('Writingbox')
-        self.writingwidget.setPlainText(string)
+
+        font = QtGui.QFont()
+        font.setFamily( "Courier" )
+        font.setFixedPitch( True )
+        font.setPointSize( 10 )
+        self.writingwidget.setFont(font)
+        highlighter = MyHighligher( self.writingwidget, 'Classic')
+        self.writingwidget.setObjectName('SequenceWritingField')
 
         leftwidget=QtGui.QWidget()
         buttonpanel = self.makeButtonPanel()
@@ -193,7 +220,9 @@ class mainwindow(QtGui.QMainWindow):
         shottime.valueChanged.connect(self.shottime_value_changed)
         updatedelay.valueChanged.connect(lambda val: setattr(self,"updatedelayvalue",val/1000.))
         timeoffset.valueChanged.connect(self.offset_value_changed)
-
+        shottime.setObjectName('shottime')
+        updatedelay.setObjectName('updatedelay')
+        timeoffset.setObjectName('timeoffset')
 
         shottime.setRange(0,3000)
         shottime.setValue(1000)
@@ -321,6 +350,7 @@ class mainwindow(QtGui.QMainWindow):
         clearAction.triggered.connect(lambda : self.Messagebox.setText(""))
         self.menu.addAction(clearAction)
         self.menu.popup(QtGui.QCursor.pos())
+
 
 ########################################################################
 #########                                                      #########

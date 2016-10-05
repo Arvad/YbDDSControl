@@ -142,6 +142,10 @@ class ParsingWorker(QObject):
         if len(blockoftext.strip())==0:
             return
         for line in blockoftext.strip().split('\n'):
+            if len(line.strip()) == 0:
+                continue
+            elif line[0] == '%':
+                continue
             name,line = self.findAndReplace(self.channelpattern,line)
             mode,line = self.findAndReplace(self.modepattern,line)
             pulseparameters,line = self.findAndReplace(self.pulsepattern,line.strip())
