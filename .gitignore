@@ -4,3 +4,4 @@ servers/Pulser/hardwareConfiguration.py
 LabRAD.ini
 clients/testparse.py
 clients/testasycro.py
+clients/settings.ini

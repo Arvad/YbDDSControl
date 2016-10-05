@@ -77,6 +77,8 @@ class ParsingWorker(QObject):
     def parseDefine(self,listofstrings,loops):
         for defblock in listofstrings:
             for line in defblock.strip().split('\n'):
+                if line[0] == '%':
+                    continue
                 if '=' in line:
                     if "ParameterVault" in line.split():
                         line = re.sub(r'from|ParameterVault','',line)
@@ -99,6 +101,8 @@ class ParsingWorker(QObject):
             newlines = ''
             for i in np.arange(begin,end,it):
                 for aline in lines.split('\n'):
+                    if aline[0] == '%':
+                        continue
                     for amatch in re.findall(r'(\(.+?\))',aline):
                         newstring = amatch
                         if 'var' in amatch:
@@ -115,6 +119,8 @@ class ParsingWorker(QObject):
         from labrad.units import WithUnit
         for block in listofstrings:
             for line in block.strip().split('\n'):
+                if line[0] == '%':
+                    continue
                 name,line = self.findAndReplace(self.channelpattern,line)
                 mode,line = self.findAndReplace(self.modepattern,line)
                 pulseparameters,line = self.findAndReplace(self.pulsepattern,line.strip())
@@ -235,7 +241,7 @@ class ParsingWorker(QObject):
     
     def get_binary_repres(self):
         self.new_sequence_trigger.emit(self.sequence,self.sequencetimelength,self.steadystatedict.keys())
-        seqObject = Sequence(self.ddsDict,self.steadystatedict,self.sequencetimelength)
+        seqObject = Sequence(self.ddsDict,self.steadystatedict,self.sequencetimelength-self.timeoffset)
         graphsequence = seqObject.addDDSPulses(self.sequence)
         tic = time.clock()
         binary,ttl = seqObject.progRepresentation()
@@ -597,7 +603,7 @@ class Sequence():
                 sec = '{0:.9f}'.format(self.sequenceTimeLength/1000.) #round to nanoseconds
                 sec= Decimal(sec) #convert to decimal 
                 tmpTime = ( sec / self.timeResolution).to_integral_value()
-                lastTTL = tmpTime
+                #lastTTL = tmpTime
                 if lastTTL > (int(tmpTime) + self.resetstepDuration):
                     print lastTTL, int(tmpTime)
                     print 'switches exceed sequence length, truncated'

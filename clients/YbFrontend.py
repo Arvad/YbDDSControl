@@ -57,7 +57,7 @@ class mainwindow(QtGui.QMainWindow):
         self.shottimevalue = 1000
         self.updatedelayvalue = 200
         self.setStyleSheet(buttonstyle('deepskyblue'))
-        self.restoreGui()
+
 
 
     # This is a seperate function because it needs to 
@@ -68,7 +68,9 @@ class mainwindow(QtGui.QMainWindow):
         yield self.create_layout()
         self.messageout('Layout done')
         self.setup_parser()
+        self.restoreGui()
         self.messageout('Initialization done')
+        
         
 
     @inlineCallbacks
@@ -117,7 +119,17 @@ class mainwindow(QtGui.QMainWindow):
             name = aspinbox.objectName()
             value= aspinbox.value()
             settings.setValue(name,value)
-
+        
+        sequencetext = self.writingwidget.toPlainText()
+        settings.setValue('Sequencetext',sequencetext)
+        
+        settings.setValue('windowposition',self.pos())
+        settings.setValue('windowsize',self.size())
+        
+        for asplitter in self.findChildren(QtGui.QSplitter):
+            name = asplitter.objectName()
+            value = asplitter.sizes()
+            settings.setValue(name,value)
         settings.sync()
 
         self.reactor.stop()
@@ -131,8 +143,17 @@ class mainwindow(QtGui.QMainWindow):
             if settings.contains(name):
                 value= settings.value(name).toFloat()[0]
                 aspinbox.setValue(value)
-
-  
+        if settings.contains('Sequencetext'):
+            self.writingwidget.setPlainText(settings.value('Sequencetext').toString())
+        if settings.contains('windowposition'):
+            self.move(settings.value("windowposition").toPoint());
+        if settings.contains('windowsize'):
+            self.resize(settings.value("windowsize").toSize());
+        
+        for asplitter in self.findChildren(QtGui.QSplitter):
+            name = asplitter.objectName()
+            values = settings.value(name).toList()
+            asplitter.setSizes([x.toInt()[0] for x in values])
     #################
     # Spectrum plotting tab panel
     #################
@@ -165,6 +186,7 @@ class mainwindow(QtGui.QMainWindow):
         from SyntaxHighlighter import MyHighlighter
         self.filename = None
         splitterwidget = QtGui.QSplitter()
+        splitterwidget.setObjectName('writegraphsplitter')
         self.graphingwidget = graphingwidget(self.reactor,self.hwconfigpath)
         self.writingwidget = QtGui.QTextEdit('Writingbox')
 
@@ -173,8 +195,7 @@ class mainwindow(QtGui.QMainWindow):
         font.setFixedPitch( True )
         font.setPointSize( 10 )
         self.writingwidget.setFont(font)
-        highlighter = MyHighligher( self.writingwidget, 'Classic')
-        self.writingwidget.setObjectName('SequenceWritingField')
+        highlighter = MyHighlighter( self.writingwidget, 'Classic')
 
         leftwidget=QtGui.QWidget()
         buttonpanel = self.makeButtonPanel()
