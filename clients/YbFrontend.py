@@ -1,6 +1,6 @@
 from PyQt4 import QtGui
 from PyQt4 import QtCore
-from PyQt4.QtCore import pyqtSignal,QThread, QObject, QEventLoop, QWaitCondition, QTimer, Qt, QSettings
+from PyQt4.QtCore import pyqtSignal,QThread, QObject, QEventLoop, QWaitCondition, QTimer, Qt, QSettings, QString
 from twisted.internet.defer import inlineCallbacks, Deferred
 from twisted.internet import threads
 import threading
@@ -56,6 +56,7 @@ class mainwindow(QtGui.QMainWindow):
         self.hardwarelock = False
         self.shottimevalue = 1000
         self.updatedelayvalue = 200
+        self.parsingerror = False
         self.setStyleSheet(buttonstyle('deepskyblue'))
 
 
@@ -447,6 +448,26 @@ class mainwindow(QtGui.QMainWindow):
         
         
     def wait_for_output(self,packet):
+        if self.parsingerror:
+            a = QtGui.QTextCharFormat()
+            a.setBackground(QtGui.QBrush(QtGui.QColor('white')))
+            cursor = self.writingwidget.textCursor()
+            cursor.select(QtGui.QTextCursor.Document)
+            cursor.setCharFormat(a)
+            self.parsingerror = False
+        if len(packet[3]) > 0:
+            self.messageout('Parsing error')
+            self.messageout('Stopped')
+            a = QtGui.QTextCharFormat()
+            a.setBackground(QtGui.QBrush(QtGui.QColor('yellow')))
+            for line in packet[3]:
+                print line
+                cursor = self.writingwidget.document().find(line)
+                cursor.select(QtGui.QTextCursor.BlockUnderCursor)
+                cursor.setCharFormat(a)
+            self.parsingerror = True
+            return
+            
         d = threads.deferToThread(self.waiter_func,2)
         d.addCallback(self.output_sequence,packet)
         
@@ -464,7 +485,7 @@ class mainwindow(QtGui.QMainWindow):
     def output_sequence(self,ignore,packet):
         self.hardwarelock = True
         if not self.stopping:
-            binary,ttl,message = packet
+            binary,ttl,message, errorlist = packet
             pulser = yield self.connection.get_server('Pulser')
             yield pulser.new_sequence()
             check = yield pulser.program_dds_and_ttl(binary,ttl)

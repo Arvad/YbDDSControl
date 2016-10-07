@@ -1,4 +1,5 @@
 from PyQt4.QtCore import QThread, pyqtSignal, QObject, pyqtSlot, QMutex, QMutexLocker
+from PyQt4 import QtGui
 from twisted.internet.defer import inlineCallbacks, returnValue  
 import threading
 import re
@@ -68,7 +69,7 @@ class ParsingWorker(QObject):
 
     def defineRegexPatterns(self):
         self.channelpattern = r'Channel\s+([aA0-zZ9]+)\s'
-        self.pulsepattern   = r'([a-z]*)\s+([+-]?[0-9]+|[+-]?[0-9]+\.[0-9]+|var\s+[aA0-zZ9]+)\s+([aA-zZ]+)'
+        self.pulsepattern   = r'([a-z]*)\s+([+-]?[0-9]+|[+-]?[0-9]+\.[0-9]+|[aA0-zZ9]+)\s+([aA-zZ]+)\s*'
         self.looppattern    = r'(?s)(?<=)#repeat(.+?)\s+(.+?)(?=)#endrepeat'
         self.defpattern     = r'(?s)(?<=)#def(.+?)(?=)#enddef'
         self.modepattern    = r'in\s+mode\s+([aA-zZ]+)'
@@ -77,43 +78,56 @@ class ParsingWorker(QObject):
     def parseDefine(self,listofstrings,loops):
         for defblock in listofstrings:
             for line in defblock.strip().split('\n'):
-                if line[0] == '%':
-                    continue
-                if '=' in line:
-                    if "ParameterVault" in line.split():
-                        line = re.sub(r'from|ParameterVault','',line)
-                        param = line.split()[2]
-                        line =re.sub(param,str(self.parameters[param]),line)
-                    exec('self.' + line.strip())
-                else:
-                    words = line.strip().split()
-                    exec('self.'+words[1]+' = 0.0')
+                try:
+                    if line[0] == '%':
+                        continue
+                    if '=' in line:
+                        if "ParameterVault" in line.split():
+                            line = re.sub(r'from|ParameterVault','',line)
+                            param = line.split()[2]
+                            line =re.sub(param,str(self.parameters[param]),line)
+                        exec('self.' + line.strip())
+                    else:
+                        words = line.strip().split()
+                        exec('self.'+words[1]+' = 0.0')
+                except Exception,e:
+                    self.errorlines.append(line)
+                    print 'Cannot define "{:}"'.format(line)
 
 
     def parseLoop(self,listofstrings):
         for loopparams, lines in listofstrings:
-            begin,end,it = loopparams.split(',')
-            lines = lines.strip()
-            itervar = begin.split('=')[0].strip()
-            begin=int(begin.split('=')[1])
-            it = int(it.split('+')[1])
-            end = int(end.split('<')[1])
-            newlines = ''
-            for i in np.arange(begin,end,it):
-                for aline in lines.split('\n'):
-                    if aline[0] == '%':
-                        continue
-                    for amatch in re.findall(r'(\(.+?\))',aline):
-                        newstring = amatch
-                        if 'var' in amatch:
-                            newstring = amatch.replace('var ','self.')
-                        if itervar in amatch:
-                             newstring = newstring.replace(itervar,str(i))
-                        newstring = str(eval(newstring))
-                        aline = aline.replace(amatch,newstring)
-                    newlines += aline + '\n'
-            self.parsePulses(newlines)
-
+            try:
+                begin,end,it = loopparams.split(',')
+                lines = lines.strip()
+                itervar = begin.split('=')[0].strip()
+                begin=int(begin.split('=')[1])
+                it = int(it.split('+')[1])
+                end = int(end.split('<')[1])
+            except Exception:
+                self.errorlines.append(lines)
+                print 'Cannot parse loop'
+            
+            try:
+                newlines = ''
+                for i in np.arange(begin,end,it):
+                    for aline in lines.split('\n'):
+                        if aline[0] == '%':
+                            continue
+                        for amatch in re.findall(r'(\(.+?\))',aline):
+                            newstring = amatch
+                            if itervar in amatch:
+                                 newstring = newstring.replace(itervar,str(i))
+                            for anothermatch in re.findall(r'([aA-zZ]+[0-9]*)',newstring):
+                                newstring = newstring.replace(anothermatch,str(getattr(self,anothermatch)))
+                            newstring = str(eval(newstring))
+                            anline = aline.replace(amatch,newstring)
+                        newlines += anline + '\n'
+                self.parsePulses(newlines,True)
+            except Exception,e:
+                self.errorlines.append(aline)
+                print e
+                
     def parseSteadystate(self,listofstrings):
         self.steadystatedict = {}
         from labrad.units import WithUnit
@@ -144,99 +158,77 @@ class ParsingWorker(QObject):
                 self.ddsDict[aname].frequency = 0
                 self.ddsDict[aname].amplitude = -37
 
-    def parsePulses(self,blockoftext):
+    def parsePulses(self,blockoftext,fromloop = False):
         if len(blockoftext.strip())==0:
             return
         for line in blockoftext.strip().split('\n'):
-            if len(line.strip()) == 0:
-                continue
-            elif line[0] == '%':
-                continue
-            name,line = self.findAndReplace(self.channelpattern,line)
-            mode,line = self.findAndReplace(self.modepattern,line)
-            pulseparameters,line = self.findAndReplace(self.pulsepattern,line.strip())
-            if mode[0] == 'Normal':
-                self.makeNormalPulse(name,0,pulseparameters)
-            elif mode[0] == 'Modulation':
-                self.makeModulationPulse(name,1,pulseparameters)
+            try:
+                if len(line.strip()) == 0:
+                    continue
+                elif line[0] == '%':
+                    continue
+                name,nline = self.findAndReplace(self.channelpattern,line)
+                mode,nline = self.findAndReplace(self.modepattern,nline)
+                pulseparameters,nline = self.findAndReplace(self.pulsepattern,nline.strip())
+                if mode[0] == 'Normal':
+                    self.makePulse(name,0,pulseparameters)
+                elif mode[0] == 'Modulation':
+                    self.makePulse(name,1,pulseparameters)
+            except Exception,e:
+                    if fromloop:
+                        raise Exception,e
+                    print e
+                    self.errorlines.append(line)
 
-    def makeNormalPulse(self,name,mode,parameters):
+    def makePulse(self,name,mode,parameters):
         from labrad.units import WithUnit
-        __freq, __amp, __begin, __dur = [0]*4
         __phase = WithUnit(0,"deg")
-        __ramprate = WithUnit(0,'MHz')
-        __ampramp = WithUnit(0,'dBm')
-            
-        for desig,value,unit in parameters:
+        if mode == 0:
+            __modespecific1 = WithUnit(0,'MHz')
+            __modespecific2 = WithUnit(0,'dBm')
+        elif mode == 1:
+            __modespecific1 = WithUnit(0,'MHz')
+            __modespecific2 = WithUnit(0,'MHz')
+        
+        for desig,initvalue,unit in parameters:
+            wrongunit = False
+            try:
+                value = float(initvalue)
+            except ValueError:
+                try:
+                    value = getattr(self,initvalue.strip())
+                except Exception:
+                    raise Exception('"{:}" is not defined'.format(initvalue.strip()))
             if   desig == 'do':
-                try:
-                    __freq = WithUnit(float(value),unit)
-                except ValueError:
-                    __freq = WithUnit(eval('self.'+value.split()[1].strip()),unit) 
+                __freq = WithUnit(float(value),unit)
+                wrongunit = wrongunit or not __freq.isCompatible('Hz')
             elif desig == 'at':
-                try:
-                    __begin = WithUnit(float(value) - self.timeoffset,unit)
-                except ValueError:
-                    __begin = WithUnit(eval('self.'+value.split()[1].strip()) - self.timeoffset,unit)
+                __begin = WithUnit(float(value) - self.timeoffset,unit)
+                wrongunit = wrongunit or not __begin.isCompatible('s')
             elif desig == 'for':
-                try:
-                    __dur = WithUnit(float(value),unit)
-                except ValueError:
-                    __dur = WithUnit(eval('self.'+value.split()[1].strip()),unit)
+                __dur = WithUnit(float(value),unit)
+                wrongunit = wrongunit or not __dur.isCompatible('s')
             elif desig == 'with':
-                try:
-                    __amp = WithUnit(float(value),unit)
-                except ValueError:
-                    __amp = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-            elif desig == 'freqramp':
-                try:
-                    __ramprate = WithUnit(float(value),unit)
-                except ValueError:
-                    __ramprate = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-            elif desig == 'ampramp':
-                try:
-                    __ampramp = WithUnit(float(value),unit)
-                except ValueError:
-                    __ampramp = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-        self.sequence.append((name[0],__begin,__dur,__freq,__amp,__phase,__ramprate,__ampramp,mode))
-    
-    def makeModulationPulse(self,name,mode,parameters):
-        from labrad.units import WithUnit
-        __freq, __amp, __begin, __dur, __excur, __modfreq = [0]*6
-        __phase = WithUnit(0,"deg")
-        for desig,value,unit in parameters:
-            if   desig == 'do':
-                try:
-                    __freq = WithUnit(float(value),unit)
-                except ValueError:
-                    __freq = WithUnit(eval('self.'+value.split()[1].strip()),unit) 
-            elif desig == 'at':
-                try:
-                    __begin = WithUnit(float(value) - self.timeoffset,unit)
-                except ValueError:
-                    __begin = WithUnit(eval('self.'+value.split()[1].strip()) - self.timeoffset,unit)
-            elif desig == 'for':
-                try:
-                    __dur = WithUnit(float(value),unit)
-                except ValueError:
-                    __dur = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-            elif desig == 'with':
-                try:
-                    __amp = WithUnit(float(value),unit)
-                except ValueError:
-                    __amp = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-            elif desig == 'modfreq':
-                try:
-                    __modfreq = WithUnit(float(value),unit)
-                except ValueError:
-                    __modfreq = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-            elif desig == 'modexcur':
-                try:
-                    __excur = WithUnit(float(value),unit)
-                except ValueError:
-                    __excur = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-        self.sequence.append((name[0],__begin,__dur,__freq,__amp,__phase,__excur,__modfreq,mode))
-    
+                __amp = WithUnit(float(value),unit)
+                wrongunit = wrongunit or not __amp.isCompatible('dBm')
+            elif desig == 'freqramp' and mode == 0:
+                __modespecific1 = WithUnit(float(value),unit)
+                wrongunit = wrongunit or not __modespecific1.isCompatible('Hz')
+            elif desig == 'ampramp' and mode == 0:
+                __modespecific2 = WithUnit(float(value),unit)
+                wrongunit = wrongunit or not __modespecific2.isCompatible('dBm')
+            elif desig == 'modfreq' and mode == 1:
+                __modespecific1 = WithUnit(float(value),unit)
+                wrongunit = wrongunit or not __modespecific1.isCompatible('Hz')
+            elif desig == 'modexcur' and mode == 1:
+                __modespecific2 = WithUnit(float(value),unit)
+                wrongunit = wrongunit or not __modespecific2.isCompatible('Hz')
+            else:
+                raise Exception('"{:}" is not a valid keyword'.format(desig))
+            if wrongunit:
+                raise Exception('"{:}" not allowed as units for {:}'.format(unit,value))
+                
+        self.sequence.append((name[0],__begin,__dur,__freq,__amp,__phase,__modespecific1,__modespecific2,mode))
     
     
     def get_binary_repres(self):
@@ -261,9 +253,10 @@ class ParsingWorker(QObject):
         self.text = text
         if value is not None:
             self.update_parameters(value)
+        self.errorlines = []
         self.parse_text()
         binary,ttl = self.get_binary_repres() 
-        return (binary,ttl,value)
+        return (binary,ttl,value,self.errorlines)
         
 class Sequence():
     """Sequence for programming pulses"""
