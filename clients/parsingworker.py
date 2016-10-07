@@ -133,23 +133,29 @@ class ParsingWorker(QObject):
         from labrad.units import WithUnit
         for block in listofstrings:
             for line in block.strip().split('\n'):
-                if line[0] == '%':
-                    continue
-                name,line = self.findAndReplace(self.channelpattern,line)
-                mode,line = self.findAndReplace(self.modepattern,line)
-                pulseparameters,line = self.findAndReplace(self.pulsepattern,line.strip())
-                for desig,value,unit in pulseparameters:
-                    if desig == 'do':
-                        try:
-                            __freq = WithUnit(float(value),unit)
-                        except ValueError:
-                            __freq = WithUnit(float(value),unit)
-                    elif desig == 'with':
-                        try:
-                            __amp = WithUnit(float(value),unit)
-                        except ValueError:
-                            __amp = WithUnit(float(value),unit)
-                self.steadystatedict[name[0]] = {'freq': __freq['MHz'], 'ampl':__amp['dBm']}
+                try:
+                    if line[0] == '%':
+                        continue
+                    name,line = self.findAndReplace(self.channelpattern,line)
+                    mode,line = self.findAndReplace(self.modepattern,line)
+                    if name[0] not in self.ddsDict.keys():
+                        raise Exception('"{:}" is not a valid channel name'.format(name[0]))
+                    pulseparameters,line = self.findAndReplace(self.pulsepattern,line.strip())
+                    for desig,value,unit in pulseparameters:
+                        if desig == 'do':
+                            try:
+                                __freq = WithUnit(float(value),unit)
+                            except ValueError:
+                                __freq = WithUnit(float(value),unit)
+                        elif desig == 'with':
+                            try:
+                                __amp = WithUnit(float(value),unit)
+                            except ValueError:
+                                __amp = WithUnit(float(value),unit)
+                    self.steadystatedict[name[0]] = {'freq': __freq['MHz'], 'ampl':__amp['dBm']}
+                except Exception,e:
+                    self.errorlines.append(line)
+                    print e
         for aname in self.ddsDict.keys():
             if aname in self.steadystatedict:
                 self.ddsDict[aname].frequency = self.steadystatedict[aname]['freq']
@@ -169,6 +175,8 @@ class ParsingWorker(QObject):
                     continue
                 name,nline = self.findAndReplace(self.channelpattern,line)
                 mode,nline = self.findAndReplace(self.modepattern,nline)
+                if name[0] not in self.ddsDict.keys():
+                        raise Exception('"{:}" is not a valid channel name'.format(name[0]))
                 pulseparameters,nline = self.findAndReplace(self.pulsepattern,nline.strip())
                 if mode[0] == 'Normal':
                     self.makePulse(name,0,pulseparameters)

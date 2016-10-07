@@ -81,7 +81,6 @@ class mainwindow(QtGui.QMainWindow):
         yield cxn.connect()
         self.connection = cxn
         self.context = cxn.context()
-        print self.connection
         p = yield self.connection.get_server('Pulser')
         self.hwconfigpath = yield p.get_hardwareconfiguration_path()
         self.linetriggerstate = yield p.line_trigger_state()
@@ -358,12 +357,18 @@ class mainwindow(QtGui.QMainWindow):
         self.messageout('Completed shot: {:}'.format(ID[1]))
     
     def offset_value_changed(self,val):
-        self.graphingwidget.timeoffset = val
-        self.parsingworker.timeoffset = val
+        try:
+            self.graphingwidget.timeoffset = val
+            self.parsingworker.timeoffset = val
+        except AttributeError:
+            pass
 
     def shottime_value_changed(self,val):
-        self.shottimevalue = val
-        self.parsingworker.sequencetimelength = val
+        try:
+            self.shottimevalue = val
+            self.parsingworker.sequencetimelength = val
+        except AttributeError:
+            pass
 
 
     def messagebox_contextmenu(self,event):
@@ -461,7 +466,6 @@ class mainwindow(QtGui.QMainWindow):
             a = QtGui.QTextCharFormat()
             a.setBackground(QtGui.QBrush(QtGui.QColor('yellow')))
             for line in packet[3]:
-                print line
                 cursor = self.writingwidget.document().find(line)
                 cursor.select(QtGui.QTextCursor.BlockUnderCursor)
                 cursor.setCharFormat(a)
