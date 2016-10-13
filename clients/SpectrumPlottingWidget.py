@@ -54,7 +54,7 @@ class SpectrumPlottingWidget(QtGui.QWidget):
                     x = data['freq']
                     y1 = data['P_c']
                     y2 = data['N_tc']
-                elif 'param' in filename.lower():
+                elif 'para' in filename.lower():
                     data = self.getData(self.directorydisplay.text()+'\\'+filename,'Parameterscan')
                     x = data['param']
                     y1 = data['P_c']
