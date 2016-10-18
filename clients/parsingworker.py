@@ -453,27 +453,28 @@ class Sequence():
             ramprange = channel.boardramprange
 
             if ramp_rate < ramprange[0]:
-                ramp_rate = ramprange[0]
+                ramp_rate = ramprange[0] #automatically becomes zero
             elif ramp_rate > ramprange[1]:
                 ramp_rate = ramprange[1]
 
             if amp_ramp_rate < amp_ramp_range[0]:
-                amp_ramp_rate = amp_ramp_range[0]
-            elif amp_ramp_rate > amp_ramp_range[1]:
-                amp_ramp_rate = amp_ramp_range[1]
+                slope = 1./amp_ramp_range[1]
+            elif amp_ramp_rate >= amp_ramp_range[1]:
+                slope = 1./(amp_ramp_range[1])*1.01
             else:
-                amp_ramp_rate = 1/amp_ramp_rate
-
-
-
-            for val, rng, precision, extrabits in [(phase,              phaserange, 16, False),
-                                                    (ampl,               amplrange, 16, True),
-                                                    (amp_ramp_rate, amp_ramp_range, 16, False),
-                                                    (ramp_rate,          ramprange, 16, False),
-                                                    (freq,               freqrange, 64, False)]:
+                slope = 1./(amp_ramp_rate)
+            slope_range = (1./amp_ramp_range[1],1./amp_ramp_range[0])
+            for val, rng, precision, extrabits, ampramp in [(phase,             phaserange, 16, False, False),
+                                                           (ampl,               amplrange, 16, True,  False ),
+                                                           (slope,            slope_range, 16, False, True),
+                                                           (ramp_rate,          ramprange, 16, False, False),
+                                                           (freq,               freqrange, 64, False, False)]:
                 minim,maxim = rng                                    
                 resolution = (maxim - minim) / float(2**precision - 1)
-                num = int((val - minim)/resolution) #number representation
+                if ampramp:
+                    num = int(np.ceil((val - minim)/resolution))
+                else:
+                    num = int((val - minim)/resolution) #number representation
                 b = bytearray(precision/8)
                 for i in range(len(b)):
                     tmp = (num//(2**(i*8)))%256
@@ -494,7 +495,6 @@ class Sequence():
             ramping_interval = (10*24.)/2000  # hardcoded in fpga code, 120 ns between each frequency step
             freq_change_rate  = 4 * frequencyexcursion * frequencymodulation # frequency change per second required
             freq_step_size = freq_change_rate * ramping_interval
-            
             for val, rng, precision, extrabits in [(phase,            phaserange, 16, False),
                                                     (ampl,             amplrange, 16, True),
                                                     (freq_step_size,   freqrange, 32, False),
@@ -590,7 +590,6 @@ class Sequence():
         lastTime = 0
         entries = sorted(self.ddsSettingList, key = lambda t: t[1] ) #sort by starting time
         possibleError = (0,'')
-        print pulses_end
         while True:
             try:
                 name,start,num,typ = entries.pop(0)
@@ -616,8 +615,6 @@ class Sequence():
                 self._addNewSwitch(lastTTL + self.resetstepDuration ,self.resetDDS,-1)
                 return dds_program
             end_time, end_typ =  pulses_end[name]
-            import binascii
-            print name,start,typ,binascii.hexlify(num)
             if start > lastTime:
                 #the time has advanced, so need to program the previous state
                 if possibleError[0] == lastTime and len(possibleError[1]): raise Exception(possibleError[1]) #if error exists and belongs to that time
@@ -643,7 +640,6 @@ class Sequence():
                 pulses_end[name] = (start, typ)
 
     def addToProgram(self, prog, state):
-        print 'programming'
         for name,num in state.iteritems():
             #import binascii
             #print '------------------'

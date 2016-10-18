@@ -559,7 +559,6 @@ class mainwindow(QtGui.QMainWindow):
             self.parsingerror = False
         if len(packet[3]) > 0:
             self.messageout('Parsing error')
-            self.stopping = True
             self.threadcounter -= 1
             self.messageout('Stopped')
             a = QtGui.QTextCharFormat()
