@@ -32,7 +32,7 @@ class ParsingWorker(QObject):
         self.steadystatedict = {}
         self.lastannouncement = (0L,0L,0,0L,False,0.0,0.0,0.0)
         self.timeoffset = 350
-        self.sequencetimelength = 1000
+        self.endtime = 1000
         sys.path.append(hwconfigpath)
         global hardwareConfiguration
         from hardwareConfiguration import hardwareConfiguration
@@ -78,6 +78,8 @@ class ParsingWorker(QObject):
     def parseDefine(self,listofstrings,loops):
         for defblock in listofstrings:
             for line in defblock.strip().split('\n'):
+                if len(line) == 0:
+                    continue
                 try:
                     if line[0] == '%':
                         continue
@@ -240,8 +242,8 @@ class ParsingWorker(QObject):
     
     
     def get_binary_repres(self):
-        self.new_sequence_trigger.emit(self.sequence,self.sequencetimelength,self.steadystatedict.keys())
-        seqObject = Sequence(self.ddsDict,self.steadystatedict,self.sequencetimelength-self.timeoffset)
+        self.new_sequence_trigger.emit(self.sequence,self.endtime,self.steadystatedict.keys())
+        seqObject = Sequence(self.ddsDict,self.steadystatedict,self.endtime-self.timeoffset)
         graphsequence = seqObject.addDDSPulses(self.sequence)
         tic = time.clock()
         binary,ttl = seqObject.progRepresentation()
@@ -268,14 +270,14 @@ class ParsingWorker(QObject):
         
 class Sequence():
     """Sequence for programming pulses"""
-    def __init__(self,ddsDict,steadystatedict,sequencetimelength):
+    def __init__(self,ddsDict,steadystatedict,endtime):
         self.channelTotal = hardwareConfiguration.channelTotal
         self.timeResolution = Decimal(hardwareConfiguration.timeResolution)
         self.MAX_SWITCHES = hardwareConfiguration.maxSwitches
         self.resetstepDuration = hardwareConfiguration.resetstepDuration
         self.ddsDict = ddsDict
         self.steadystatedict = steadystatedict
-        self.sequenceTimeLength = sequencetimelength
+        self.endtime = endtime
 
         #dictionary in the form time:which channels to switch
         #time is expressed as timestep with the given resolution
@@ -323,7 +325,7 @@ class Sequence():
             else:
                 valuedict[aname] = [(WithUnit(0,'ms'),WithUnit(0,'ms'),WithUnit(0,'MHz'),WithUnit(-37,'dBm'),
                            WithUnit(0,'deg'),WithUnit(0,'MHz'),WithUnit(0,'dBm'),0)]
-                           
+       
         for aname,alist in valuedict.iteritems():
             truncate = False
             values = sorted(alist, key = lambda x: x[0])
@@ -351,11 +353,10 @@ class Sequence():
                 ampl = ampl['dBm'] 
                 phase = phase['deg']
 
-                if (start + dur) > self.sequenceTimeLength/1000.:
-                    dur = self.sequenceTimeLength/1000. - start
+                if (start + dur) > self.endtime/1000.:
+                    dur = self.endtime/1000. - start
                     truncate = True
                     
-
                 if mode == 0: #normal mode
                     modespecific1 = modespecific1['MHz'] #ramp_rate        If anything different from 0, it will ramp while being off
                     modespecific2 = modespecific2['dBm'] #amp_ramp_rate    If anything different from 0, it will ramp while being off
@@ -366,7 +367,7 @@ class Sequence():
                 if nextvalue is not None:
                     nextfreq = nextfreq['MHz']
                     if nextmode == 0: #normal mode
-                        if nextmodespecific1 != 0:
+                        if nextmodespecific1['MHz'] != 0:
                             nextfreq = freq
                         nextmodespecific1 = 0 #ramp_rate        If anything different from 0, it will ramp while being off
                         nextmodespecific2 = 0 #amp_ramp_rate    If anything different from 0, it will ramp while being off
@@ -404,7 +405,7 @@ class Sequence():
                 if start == 0:
                     if dur != 0:
                         self.addDDS(aname, start, num, 'start')
-                        self.addDDS(aname, start + dur, num, 'stop')
+                        self.addDDS(aname, start + dur, num_off, 'stop')
                     else:
                         self.addDDS(aname, start, num, 'begin')
                 elif not dur == 0:#0 length pulses are ignored
@@ -589,6 +590,7 @@ class Sequence():
         lastTime = 0
         entries = sorted(self.ddsSettingList, key = lambda t: t[1] ) #sort by starting time
         possibleError = (0,'')
+        print pulses_end
         while True:
             try:
                 name,start,num,typ = entries.pop(0)
@@ -601,10 +603,10 @@ class Sequence():
                 #add termination
                 #at the end of the sequence, reset dds
                 lastTTL = max(self.switchingTimes.keys())
-                sec = '{0:.9f}'.format(self.sequenceTimeLength/1000.) #round to nanoseconds
+                sec = '{0:.9f}'.format(self.endtime/1000.) #round to nanoseconds
                 sec= Decimal(sec) #convert to decimal 
                 tmpTime = ( sec / self.timeResolution).to_integral_value()
-                #lastTTL = tmpTime
+                lastTTL = tmpTime
                 if lastTTL > (int(tmpTime) + self.resetstepDuration):
                     print lastTTL, int(tmpTime)
                     print 'switches exceed sequence length, truncated'
@@ -614,6 +616,8 @@ class Sequence():
                 self._addNewSwitch(lastTTL + self.resetstepDuration ,self.resetDDS,-1)
                 return dds_program
             end_time, end_typ =  pulses_end[name]
+            import binascii
+            print name,start,typ,binascii.hexlify(num)
             if start > lastTime:
                 #the time has advanced, so need to program the previous state
                 if possibleError[0] == lastTime and len(possibleError[1]): raise Exception(possibleError[1]) #if error exists and belongs to that time
@@ -639,6 +643,7 @@ class Sequence():
                 pulses_end[name] = (start, typ)
 
     def addToProgram(self, prog, state):
+        print 'programming'
         for name,num in state.iteritems():
             #import binascii
             #print '------------------'
