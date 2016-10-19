@@ -50,21 +50,128 @@ class ParsingWorker(QObject):
     def parse_text(self):
         self.sequence =  []
         self.ddsDict = hardwareConfiguration.ddsDict
-        #tic = time.clock()
-        defs,reducedtext =  self.findAndReplace(self.defpattern,self.text,re.DOTALL)
-        loops,reducedtext = self.findAndReplace(self.looppattern,reducedtext,re.DOTALL)
-        steadys,reducedtext = self.findAndReplace(self.steadypattern,reducedtext,re.DOTALL)
-        self.parseDefine(defs,loops)
-        self.parseLoop(loops)
-        self.parseSteadystate(steadys)
-        self.parsePulses(reducedtext)
-        #toc = time.clock()
-        #print 'Parsing time:                  ',toc-tic
+        self.defineDict = {}
+        loopDict = {}
+        lines = self.text.strip().split('\n')
+        linenr = 0
+        mode = 'none'
+        while linenr<len(lines):
+            currentline = lines[linenr].strip()
+            print currentline,mode
+            if len(currentline) < 1 or currentline[0] == '%':
+                linenr += 1
+                continue
+            for avariable,avalue in self.defineDict.iteritems():
+                if avariable in currentline:
+                    currentline = re.sub(r'\b'+avariable+r'\b',str(avalue),currentline)
+            if currentline[0] == '#':
+                if '#def' in currentline:
+                    if mode == 'def':
+                        self.errorlines.append(currentline)
+                        raise Exception('Nested define blocks not allowed')
+                    mode = 'def'
+                elif '#enddef' in currentline:
+                    if mode != 'def':
+                        self.errorlines.append(currentline)
+                        raise Exception('No define block to end')
+                    mode = 'none'
+                elif '#repeat' in currentline:
+                    mode = 'repeat'
+                    pat = r'repeat\s+([aA0-zZ9]+)\s*:\s*range\(([0-9]+,[0-9]+,[0-9]+|[0-9]+,[0-9]+)\)'
+                    loopdata = re.findall(pat,currentline)[0]
+                    looplist = []
+                    if len(loopdata) == 0:
+                        self.errorlines.apped(currentline)
+                        raise Exception('Repeat information missing')
+                elif '#endrepeat' in currentline:
+                    if mode != 'repeat':
+                        self.errorlines.append(currentline)
+                        raise Exception('No repeat block to end')
+                    mode = 'none'
+                    loopvar = loopdata[0]
+                    print loopdata
+                    if len(loopdata[1]) == 3:
+                        loopstart,loopend,loopstep = loopdata[1]
+                    else:
+                        loopstart,loopend = loopdata[1]
+                        loopstep = 1
+                    extralines = []
+                    for i in range(loopstart,loopend,loopstep):
+                        for aline in looplist:
+                            for amatch in re.findall(r'(\(.+?\))',aline):
+                                newstring = amatch
+                                if itervar in amatch:
+                                    newstring = newstring.replace(itervar,str(i))
+                                for anothermatch in re.findall(r'([aA-zZ]+[0-9]*)',newstring):
+                                    newstring = newstring.replace(anothermatch,str(getattr(self,anothermatch)))
+                                newstring = str(eval(newstring))
+                                anline = aline.replace(amatch,newstring)
+                        print anline
+                elif '#steadystate' in currentline:
+                    mode = 'steady'
+                elif '#endsteadystate' in currentline:
+                    if mode != 'steady':
+                        self.errorlines.append(currentline)
+                        raise Exception('No steady state block to end')
+                    mode = 'none'
+                linenr += 1
+                continue
+            if mode == 'def':
+                print currentline
+                if not '=' in currentline:
+                    self.errorlines.append(currentline)
+                    raise Exception('Cannot define {:}'.format(currentline))
+                else:
+                    lhs,rhs = [i.strip() for i in currentline.split('=')]
+                    self.defineDict[lhs] = eval(rhs)
+                linenr += 1
+                continue
+            elif mode == 'repeat':
+                print currentline
+                looplist.append(currentline)
+            elif mode == 'steadystate':
+                name,currentline = self.findAndReplace(self.channelpattern,currentline)
+                pulsemode,currentline = self.findAndReplace(self.modepattern,currentline)
+                if name[0] not in self.ddsDict.keys():
+                    raise Exception('"{:}" is not a valid channel name'.format(name[0]))
+                pulseparameters,currentline = self.findAndReplace(self.pulsepattern,currentline.strip())
+                for desig,value,unit in pulseparameters:
+                    if desig == 'do':
+                        try:
+                            __freq = WithUnit(float(value),unit)
+                        except ValueError:
+                            __freq = WithUnit(float(value),unit)
+                    elif desig == 'with':
+                        try:
+                            __amp = WithUnit(float(value),unit)
+                        except ValueError:
+                            __amp = WithUnit(float(value),unit)
+                self.steadystatedict[name[0]] = {'freq': __freq['MHz'], 'ampl':__amp['dBm']}
+                linenpr += 1
+                continue
+            
+            name,currentline = self.findAndReplace(self.channelpattern,currentline)
+            pulsemode,currentline = self.findAndReplace(self.modepattern,currentline)
+            if name[0] not in self.ddsDict.keys():
+                raise Exception('"{:}" is not a valid channel name'.format(name[0]))
+            pulseparameters,currentline = self.findAndReplace(self.pulsepattern,currentline.strip())
+            if pulsemode[0] == 'Normal':
+                self.makePulse(name,0,pulseparameters)
+            elif pulsemode[0] == 'Modulation':
+                self.makePulse(name,1,pulseparameters)
+            linenr += 1
+        
+        print self.sequence
+        pass
         
         
-    def findAndReplace(self,pattern,string,flags=0):
+        
+        
+        
+        
+    def findAndReplace(self,pattern,string,substitute = '',flags=0):
         listofmatches = re.findall(pattern,string,flags)
-        newstring = re.sub(pattern,'',string,re.DOTALL)
+        newstring = re.sub(pattern,substitute,string,re.DOTALL)
         return listofmatches,newstring
 
     def defineRegexPatterns(self):
