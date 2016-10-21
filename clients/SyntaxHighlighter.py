@@ -31,6 +31,7 @@ class MyHighlighter( QSyntaxHighlighter ):
       keyword = QTextCharFormat()
       modewords = QTextCharFormat()
       definings = QTextCharFormat()
+      parametervaultvars = QTextCharFormat()
       steadystates = QTextCharFormat()
       loops = QTextCharFormat()
       comment = QTextCharFormat()
@@ -38,41 +39,30 @@ class MyHighlighter( QSyntaxHighlighter ):
 
       self.highlightingRules = []
 
-      # keyword
-      brush = QBrush( Qt.blue, Qt.SolidPattern )
-      keyword.setForeground( brush )
-      keyword.setFontWeight( QFont.Bold )
-      keywords = QStringList( [ "for", "at", "with", "in mode",
-                                "do", 'var', "freqramp", "ampramp","modfreq","modexcur"] )
-      for word in keywords:
-        pattern = QRegExp("\\b" + word + "\\b")
-        rule = HighlightingRule( pattern, keyword )
-        self.highlightingRules.append( rule )
-
-      # modewords
-      modewords.setForeground( QBrush( Qt.darkGreen, Qt.SolidPattern) )
-      modewords.setFontWeight( QFont.Bold )
-      keywords = QStringList( [ "Modulation", "Normal"] )
-      for word in keywords:
-        pattern = QRegExp("\\b" + word + "\\b")
-        rule = HighlightingRule( pattern, modewords )
-        self.highlightingRules.append( rule )
+      # definings
+      brush = QBrush( QColor('darkorange'), Qt.SolidPattern )
+      pattern = QRegExp("^\s*[aA0-zZ9]+\s*=")
+      definings.setForeground( brush )
+      definings.setFontWeight( QFont.Black )
+      rule = HighlightingRule( pattern, definings )
+      self.highlightingRules.append( rule )
 
       # Channel
-      pattern = QRegExp("Channel\s*[0-9aA-zZ]+")
+      pattern = QRegExp("^\s*[0-9aA-zZ]+:")
       channel.setForeground( QBrush(Qt.darkRed,Qt.SolidPattern))
       channel.setFontWeight (QFont.Bold)
       rule = HighlightingRule(pattern, channel)
       self.highlightingRules.append( rule )
-
-      # definings
-      brush = QBrush( QColor('orange'), Qt.SolidPattern )
-      pattern = QRegExp( "#def|#enddef" )
-      definings.setForeground( brush )
-      definings.setFontWeight( QFont.Bold )
-      rule = HighlightingRule( pattern, definings )
-      self.highlightingRules.append( rule )
-
+      
+      # Parameter Vault variables
+      brush = QBrush( QColor('magenta'), Qt.SolidPattern )
+      parametervaultvars.setForeground( brush )
+      parametervaultvars.setFontWeight( QFont.Black )
+      for word in ['A','B','C']:
+        pattern = QRegExp( "\\b" + word + "\\b")
+        rule = HighlightingRule( pattern, parametervaultvars )
+        self.highlightingRules.append( rule )
+            
       # steadystate
       pattern = QRegExp( "#steadystate|#endsteadystate" )
       steadystates.setForeground( QBrush(Qt.green) )
@@ -86,6 +76,28 @@ class MyHighlighter( QSyntaxHighlighter ):
       loops.setFontWeight( QFont.Bold )
       rule = HighlightingRule( pattern, loops )
       self.highlightingRules.append( rule )
+
+      # keyword
+      brush = QBrush( Qt.blue, Qt.SolidPattern )
+      keyword.setForeground( brush )
+      keyword.setFontWeight( QFont.Bold )
+      keywords = QStringList( [ "freq", "at", "amp", "mode", "for",
+                                "fromfreq", "fromamp","modfreq","modexcur"] )
+      for word in keywords:
+        pattern = QRegExp("\\b" + word + "\\b")
+        pattern.setCaseSensitivity(False)
+        rule = HighlightingRule( pattern, keyword )
+        self.highlightingRules.append( rule )
+
+      # modewords
+      modewords.setForeground( QBrush( Qt.darkGreen, Qt.SolidPattern) )
+      modewords.setFontWeight( QFont.Bold )
+      keywords = QStringList( [ "Modulation", "Normal"] )
+      for word in keywords:
+        pattern = QRegExp("\\b" + word + "\\b")
+        pattern.setCaseSensitivity(False)
+        rule = HighlightingRule( pattern, modewords )
+        self.highlightingRules.append( rule )
 
       # comment
       brush = QBrush( QColor('grey'), Qt.SolidPattern )
@@ -118,7 +130,15 @@ class TestApp( QMainWindow ):
     font.setPointSize( 10 )
     editor = QTextEdit()
     editor.setFont( font )
-    highlighter = MyHighlighter( editor, "Classic" )
+    editor.setReadOnly(True)
+    try:
+        with open('helpfile.html','r') as f:
+            data = f.read()
+            editor.setHtml(data)
+    except Exception,e:
+        print e
+        editor.setPlainText('Sorry - "helpfile.txt" could not be found')
+    #highlighter = MyHighlighter( editor, "Classic" )
     self.setCentralWidget( editor )
     self.setWindowTitle( "Syntax Highlighter" )
 

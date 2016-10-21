@@ -1,0 +1,72 @@
+<h1>DONT PANIC !!</h1>
+<h2>Keep Calm <br /> And <br /> Carry On</h2>
+<p>This might nook look like a towl, but it is in fact just as useful.</p>
+<p>The following is a table of the syntax used in the editor:</p>
+<p>There are several different lines, all syntax higlighted</p>
+<h3>Comments</h3>
+<p><span style="color: #999999;">%&nbsp;<span style="color: #000000;">Indicates a comment</span></span></p>
+<h3><span style="color: #999999;"><span style="color: #000000;">Definitions<br /></span></span></h3>
+<p><span style="color: #999999;"><span style="color: #000000;">variables are declared with an '=' statement.<br />The RHS can contain math, numbers and other variables<br /></span></span><span style="color: #ffcc00;">&lt;variable name&gt; =</span> &lt;number&gt;<br /><span style="color: #ffcc00;">MOTfrequency =</span> 12 +4<br /><span style="color: #ffcc00;">Tstart =</span> 2<br /><span style="color: #ffcc00;">MOTdur =</span> 10 + Tstart</p>
+<p>If one of the pulse keywords is used as a variable name, the syntax will alert you:<br /><span style="color: #ffcc00;"><span style="color: #0000ff;"><strong>Freq</strong></span>&nbsp;=</span> 10 + Tstart</p>
+<p>If one of the Parameter Vault variables are used, it will also light up:<br /><span style="color: #ffcc00;">Tstart =</span>&nbsp;<span style="color: #ff00ff;">A</span></p>
+<p><span style="color: #ff00ff;">A</span> <span style="color: #ffcc00;">=</span> 4</p>
+<h3>Pulses</h3>
+<p>All pulse declarations follow a simple pattern:</p>
+<p><span style="color: #993300;"><strong>DDS_2:</strong></span> <span style="color: #0000ff;"><strong>freq</strong> </span>37 MHz, <span style="color: #0000ff;"><strong>amp</strong> </span>-10 dBm, <span style="color: #0000ff;"><strong>at</strong> </span>350 ms, <span style="color: #0000ff;"><strong>for</strong> </span>20 ms, <span style="color: #0000ff;"><strong>mode</strong> </span><span style="color: #339966;"><strong>Normal</strong></span></p>
+<p><span style="color: #993300;"><strong>DDS_2:&nbsp;</strong><span style="color: #000000;">is the channel name</span></span></p>
+<p><span style="color: #0000ff;"><strong>freq</strong></span>, <span style="color: #0000ff;"><strong>amp</strong></span>, <span style="color: #0000ff;"><strong>at</strong></span>, <span style="color: #0000ff;"><strong>for</strong> </span>(<span style="color: #0000ff;"><strong>fromfreq</strong></span>, <span style="color: #0000ff;"><strong>fromamp</strong></span>): are keywords that must be followed by a number (or a variable) and a unit.<br />The keywords in parathesis can be omitted, but the others must always be specified.<br /><br /></p>
+<p><strong><span style="color: #0000ff;">mode&nbsp;</span></strong><span style="color: #0000ff;"><span style="color: #0000ff;"><span style="color: #000000;">is the only keyword that is not followed by a number and a unit. It is followed by either&nbsp;<span style="color: #339966;"><strong>Normal</strong> </span></span></span></span>or&nbsp;<span style="color: #339966;"><strong>Modulation</strong>,<br /></span>specifiying either normal pulse mode, or frequency modulation mode.</p>
+<h3>&nbsp;</h3>
+<p>&nbsp;</p>
+<p>&lt;ChannelName&gt;: freq &lt;num&gt; &lt;unit&gt;, amp &lt;num&gt;&lt;unit&gt;</p>
+<p>&nbsp;</p>
+<table>
+<tbody>
+<tr>
+<td>Keyword</td>
+<td>Meaning</td>
+<td>Example</td>
+</tr>
+<tr>
+<td><strong><span style="color: #0000ff;">freq</span></strong></td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td><strong><span style="color: #0000ff;">amp</span></strong></td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td><strong><span style="color: #0000ff;">at</span></strong></td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td><strong><span style="color: #0000ff;">for</span></strong></td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td><strong><span style="color: #0000ff;">mode</span></strong></td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td><strong><span style="color: #0000ff;">fromamp</span></strong></td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td><span style="color: #0000ff;"><strong>fromfreq</strong></span></td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td><span style="color: #993300;"><strong>Channelname</strong></span></td>
+<td>&nbsp;</td>
+<td><strong><span style="color: #993300;">DDS_2</span></strong></td>
+</tr>
+</tbody>
+</table>
+<p>&nbsp;</p>

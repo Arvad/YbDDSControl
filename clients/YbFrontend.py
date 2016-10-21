@@ -52,7 +52,7 @@ class mainwindow(QtGui.QMainWindow):
         self.reactor = reactor
         self.initialize()
         self.ParamID = None
-        self.text = ""
+        self.textlist = [[],[],[],[]]
         self.hardwarelock = False
         self.cycletimevalue = 1000
         self.updatedelayvalue = 200
@@ -98,6 +98,7 @@ class mainwindow(QtGui.QMainWindow):
     # Central (main window)
     #################
     def create_layout(self):
+        self.makeHelpWidget()
         controlwidget = self.makeControlWidget()
         sequencewidget = self.makeSequenceWidget()
         spectrumplottingwidget = self.makeSpectrumPlottingWidget()
@@ -122,8 +123,10 @@ class mainwindow(QtGui.QMainWindow):
             value= aspinbox.value()
             settings.setValue(name,value)
         
-        sequencetext = self.writingwidget.toPlainText()
-        settings.setValue('Sequencetext',sequencetext)
+        for i in range(len(self.writingwidgets)):
+            awidget = self.writingwidgets[i]
+            sequencetext = awidget.toPlainText()
+            settings.setValue('Sequencetext{:}'.format(i),sequencetext)
         
         settings.setValue('windowposition',self.pos())
         settings.setValue('windowsize',self.size())
@@ -145,8 +148,11 @@ class mainwindow(QtGui.QMainWindow):
             if settings.contains(name):
                 value= settings.value(name).toFloat()[0]
                 aspinbox.setValue(value)
-        if settings.contains('Sequencetext'):
-            self.writingwidget.setPlainText(settings.value('Sequencetext').toString())
+        
+        for i in range(len(self.writingwidgets)):
+            awidget = self.writingwidgets[i]
+            if settings.contains('Sequencetext{:}'.format(i)):
+                awidget.setPlainText(settings.value('Sequencetext{:}'.format(i)).toString())
         if settings.contains('windowposition'):
             self.move(settings.value("windowposition").toPoint());
         if settings.contains('windowsize'):
@@ -179,7 +185,28 @@ class mainwindow(QtGui.QMainWindow):
             print e
         widget.setLayout(layout)
         return widget
-
+        
+    #################
+    # Help window
+    #################
+    def makeHelpWidget(self):
+        self.Helpwindow = QtGui.QWidget()
+        layout = QtGui.QHBoxLayout()
+        editor = QtGui.QTextEdit()
+        editor.setReadOnly(True)
+        try:
+            with open('helpfile.html','r') as f:
+                data = f.read() #reads entire file into one string
+                editor.setHtml(data)
+        except Exception,e:
+            print e
+            editor.setPlainText('Sorry - "helpfile.txt" could not be found')
+        layout.addWidget(editor)
+        self.Helpwindow.setLayout(layout)
+        self.Helpwindow.show()
+        self.Helpwindow.setHidden(True)
+    
+    
     #################
     # Sqeuence tab panel
     #################
@@ -190,20 +217,27 @@ class mainwindow(QtGui.QMainWindow):
         splitterwidget = QtGui.QSplitter()
         splitterwidget.setObjectName('writegraphsplitter')
         self.graphingwidget = graphingwidget(self.reactor,self.hwconfigpath)
-        self.writingwidget = QtGui.QTextEdit('Writingbox')
-        self.writingwidget.textChanged.connect(self.startbuttonloop)
+        self.writingtab = QtGui.QTabWidget()
+        self.writingwidgets = []
+        for i in range(4):
+            self.writingwidgets.append(QtGui.QTextEdit('Writingbox{:}'.format(i)))
+                
         font = QtGui.QFont()
         font.setFamily( "Courier" )
         font.setFixedPitch( True )
         font.setPointSize( 10 )
-        self.writingwidget.setFont(font)
-        highlighter = MyHighlighter( self.writingwidget, 'Classic')
+        for i in range(len(self.writingwidgets)):
+            awritingwidget = self.writingwidgets[i]
+            awritingwidget.textChanged.connect(self.startbuttonloop)
+            awritingwidget.setFont(font)
+            highlighter = MyHighlighter( awritingwidget, 'Classic')
+            self.writingtab.addTab(awritingwidget,'Mode {:}'.format(i+1))
 
         leftwidget=QtGui.QWidget()
         buttonpanel = self.makeButtonPanel()
         leftlayout = QtGui.QGridLayout()
         leftlayout.addWidget(buttonpanel,0,0)
-        leftlayout.addWidget(self.writingwidget, 1,0,4,1)
+        leftlayout.addWidget(self.writingtab, 1,0,4,1)
         leftlayout.setSpacing(0)
         leftlayout.setContentsMargins(0,0,0,0)
         leftwidget.setLayout(leftlayout)
@@ -227,6 +261,7 @@ class mainwindow(QtGui.QMainWindow):
         self.updatebuttonloop = LoopingCall(self.flash_update)
         self.ScriptUpdatebutton.setEnabled(False)
         self.ScriptUpdatebutton.pressed.connect(self.update_script)
+        helpbutton = QtGui.QPushButton('HELP!')
         
         updatedelay = QtGui.QSpinBox()
         updatedelaylabel = QtGui.QLabel('Update delay')
@@ -241,7 +276,7 @@ class mainwindow(QtGui.QMainWindow):
         filetoolbar.addAction(QtGui.QIcon('icons/document-open.svg'),'open',self.openbuttonclick)
         filetoolbar.addAction(QtGui.QIcon('icons/document-save.svg'),'save',self.savebuttonclick)
         filetoolbar.addAction(QtGui.QIcon('icons/document-new.svg'),'new',self.newbuttonclick)
-
+        
         cycletime.valueChanged.connect(self.cycletime_value_changed)
         endtime.valueChanged.connect(self.endtime_value_changed)
         updatedelay.valueChanged.connect(lambda val: setattr(self,"updatedelayvalue",val/1000.))
@@ -276,10 +311,12 @@ class mainwindow(QtGui.QMainWindow):
         self.Alabelnow = QtGui.QLabel('   A: -')
         self.Blabelnow = QtGui.QLabel('   B: -')
         self.Clabelnow = QtGui.QLabel('   C: -')
+        self.Modelabelnow = QtGui.QLabel('Mode: -')
         self.seqlabelnext = QtGui.QLabel('seq: -')
         self.Alabelnext = QtGui.QLabel('   A: -')
         self.Blabelnext = QtGui.QLabel('   B: -')
         self.Clabelnext = QtGui.QLabel('   C: -')
+        self.Modelabelnext = QtGui.QLabel('Mode: -')
         
 
         self.Messagebox = QtGui.QTextEdit()
@@ -297,9 +334,9 @@ class mainwindow(QtGui.QMainWindow):
         Stopbutton.setStyleSheet(buttonstyle('red',textcolor = 'white'))
         Stopbutton.clicked.connect(lambda bool: Startbutton.setChecked(False))
         Startbutton.clicked.connect(lambda bool: Stopbutton.setChecked(False))
-
         Startbutton.clicked.connect(self.on_Start)
         Stopbutton.clicked.connect(self.on_Stop)
+        helpbutton.clicked.connect(lambda bool:self.Helpwindow.setHidden(not self.Helpwindow.isHidden()))
         
         timingspanel =QtGui.QFrame()
         timingspanel.setFrameStyle(1)
@@ -325,11 +362,13 @@ class mainwindow(QtGui.QMainWindow):
         parameterslayout.addWidget(self.Alabelnow,3,0)
         parameterslayout.addWidget(self.Blabelnow,4,0)
         parameterslayout.addWidget(self.Clabelnow,5,0)
+        parameterslayout.addWidget(self.Modelabelnow,6,0)
         parameterslayout.addWidget(paramlabelnext,1,1)
         parameterslayout.addWidget(self.seqlabelnext,2,1)
         parameterslayout.addWidget(self.Alabelnext,3,1)
         parameterslayout.addWidget(self.Blabelnext,4,1)
         parameterslayout.addWidget(self.Clabelnext,5,1)
+        parameterslayout.addWidget(self.Modelabelnext,6,1)
         parameterspanel.setLayout(parameterslayout)
 
         timingspanel.setLayout(timingslayout)
@@ -341,6 +380,7 @@ class mainwindow(QtGui.QMainWindow):
         layout.addWidget(LineTrigbutton,2,0)
         layout.addWidget(self.ScriptUpdatebutton,3,0)
         layout.addWidget(filetoolbar,4,0)
+        layout.addWidget(helpbutton,5,0)
         layout.addWidget(self.Messagebox,0,2,7,4)
         layout.setSpacing(2)
         layout.setContentsMargins(0,0,0,0)
@@ -355,7 +395,7 @@ class mainwindow(QtGui.QMainWindow):
 ########################################################################
     
     def setup_parser(self):
-        self.parsingworker = ParsingWorker(self.hwconfigpath,str(self.writingwidget.toPlainText()),self.reactor,self.connection,self.context)
+        self.parsingworker = ParsingWorker(self.hwconfigpath,self.reactor,self.connection,self.context)
         self.parsingworker.parsermessages.connect(self.messageout)
         self.parsingworker.new_sequence_trigger.connect(self.graphingwidget.do_sequence)
         
@@ -405,8 +445,7 @@ class mainwindow(QtGui.QMainWindow):
     def sendIdtoParameterVault(self,ID):
         pv = yield self.connection.get_server('ParameterVault')
         yield pv.set_parameter('Raman','confirm',ID)
-        #print 'time updated id: ',time.time()
-        self.messageout('Completed shot: {:}'.format(ID[1]))
+        self.messageout('Completed shot: {:} from Mode: {:}'.format(ID[1],ID[2]))
     
     def offset_value_changed(self,val):
         try:
@@ -451,12 +490,13 @@ class mainwindow(QtGui.QMainWindow):
             self.Alabelnow.setText('   A: {:}'.format(float(message[5])))
             self.Blabelnow.setText('   B: {:}'.format(float(message[6])))
             self.Clabelnow.setText('   C: {:}'.format(float(message[7])))
+            self.Modelabelnow.setText('Mode: {:}'.format(int(message[2])))
         if typ == 'next':
             self.seqlabelnext.setText('seq: {:}'.format(int(message[1])))
             self.Alabelnext.setText('   A: {:}'.format(float(message[5])))
             self.Blabelnext.setText('   B: {:}'.format(float(message[6])))
             self.Clabelnext.setText('   C: {:}'.format(float(message[7])))
-        
+            self.Modelabelnext.setText('Mode: {:}'.format(int(message[2])))
 ########################################################################
 #########                                                      #########
 #########                BUTTON ACTIONS                        #########
@@ -486,20 +526,24 @@ class mainwindow(QtGui.QMainWindow):
         
         
     def update_script(self,**kwargs):
-        if self.writingwidget.document().isModified() or ('start' in kwargs.keys()):
-            self.text = str(self.writingwidget.toPlainText())
-            self.writingwidget.document().setModified(False)
-            if self.updatebuttonloop.running:
-                self.updatebuttonloop.stop()
-                self.ScriptUpdatebutton.setStyleSheet('background-color : lightgrey')
-        else:
-            self.messageout('Nothing to update')
-
+        for i in range(len(self.writingwidgets)):
+            awidget = self.writingwidgets[i]
+            if awidget.document().isModified() or ('start' in kwargs.keys()):
+                self.textlist[i] = str(awidget.toPlainText())
+                awidget.document().setModified(False)
+                if self.updatebuttonloop.running:
+                    self.updatebuttonloop.stop()
+                    self.ScriptUpdatebutton.setStyleSheet('background-color : lightgrey')
+            else:
+                self.messageout('Nothing to update for Mode {:}'.format(i+1))
+        
+    
     #########################
     #File buttons
     #########################
     def openbuttonclick(self):
-        if self.writingwidget.document().isModified():
+        writingwidget = self.writingwidgets[self.writingtab.currentIndex()]
+        if writingwidget.document().isModified():
             reply = QtGui.QMessageBox.question(self, 'Message',
                 "Do you want to save the changes?", QtGui.QMessageBox.Yes | QtGui.QMessageBox.No | QtGui.QMessageBox.Cancel,
                 QtGui.QMessageBox.Cancel)
@@ -512,23 +556,25 @@ class mainwindow(QtGui.QMainWindow):
         if len(fname) != 0:
             try:
                 with open(fname,'r') as f:
-                    self.writingwidget.setPlainText(f.read())
+                    writingwidget.setPlainText(f.read())
             except Exception,e:
                 print e
         
     def savebuttonclick(self):
+        writingwidget = self.writingwidgets[self.writingtab.currentIndex()]
         defname = time.strftime('%y%m%d_%H%M%S')
         sname = QtGui.QFileDialog.getSaveFileName(self,'Save file','sequencescripts/'+defname,'*.txt')
         if len(sname)!=0:
             try:
                 with open(sname,'w') as f:
-                    f.write(self.writingwidget.toPlainText())
+                    f.write(writingwidget.toPlainText())
             except Exception,e:
                 print e
-        self.writingwidget.document().setModified(False)
+        writingwidget.document().setModified(False)
             
     def newbuttonclick(self):
-        if self.writingwidget.document().isModified():
+        writingwidget = self.writingwidgets[self.writingtab.currentIndex()]
+        if writingwidget.document().isModified():
             reply = QtGui.QMessageBox.question(self, 'Message',
                 "Do you want to save the changes?", QtGui.QMessageBox.Yes | QtGui.QMessageBox.No | QtGui.QMessageBox.Cancel,
                 QtGui.QMessageBox.Cancel)
@@ -537,7 +583,7 @@ class mainwindow(QtGui.QMainWindow):
             else:
                 if reply == QtGui.QMessageBox.Yes:
                     self.savebuttonclick()
-        self.writingwidget.clear()
+        writingwidget.clear()
 
     @inlineCallbacks
     def run(self,bool = None):
@@ -545,31 +591,36 @@ class mainwindow(QtGui.QMainWindow):
         pv = yield self.connection.get_server('ParameterVault')
         value = yield pv.get_parameter('Raman','announce')
         self.update_param_labels(value,'next')
-        d = threads.deferToThread(self.parsingworker.run,self.text,value)
+        mode = value[2] - 1 #because python 0 indexes
+        d = threads.deferToThread(self.parsingworker.run,self.textlist[mode],value)
         d.addCallback(self.wait_for_output)
         
         
     def wait_for_output(self,packet):
+        widget = self.writingwidgets[packet[2][2]-1]
         if self.parsingerror:
             a = QtGui.QTextCharFormat()
             a.setBackground(QtGui.QBrush(QtGui.QColor('white')))
-            cursor = self.writingwidget.textCursor()
+            
+            cursor = widget.textCursor()
             cursor.select(QtGui.QTextCursor.Document)
             cursor.setCharFormat(a)
             self.parsingerror = False
         if len(packet[3]) > 0:
-            self.messageout('Parsing error')
+            self.messageout('Parsing error in Mode {:}'.format(packet[2][2]))
             self.threadcounter -= 1
             self.messageout('Stopped')
             a = QtGui.QTextCharFormat()
             a.setBackground(QtGui.QBrush(QtGui.QColor('yellow')))
             for line in packet[3]:
-                cursor = self.writingwidget.document().find(line)
+                cursor = widget.document().find(line)
                 cursor.select(QtGui.QTextCursor.BlockUnderCursor)
                 cursor.setCharFormat(a)
+                self.messageout('Problems in Mode {:}'.format(packet[2][2]))
             self.parsingerror = True
             return
-            
+        
+        
         d = threads.deferToThread(self.waiter_func,2)
         d.addCallback(self.output_sequence,packet)
         

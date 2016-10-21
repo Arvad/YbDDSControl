@@ -10,21 +10,22 @@ from decimal import Decimal
 import sys
 
 global harwareConfiguration
-
+global WithUnit
 class ParsingWorker(QObject):
     trackingparameterserver = pyqtSignal(bool)
     parsermessages = pyqtSignal(str)
     new_sequence_trigger = pyqtSignal(list,int,list)
 
 
-    def __init__(self,hwconfigpath,text,reactor,connection,cntx):
+    def __init__(self,hwconfigpath,reactor,connection,cntx):
+        global WithUnit
+        from labrad.units import WithUnit
         super(ParsingWorker,self).__init__()
-        self.text = text
+        self.text = ""
         self.reactor = reactor
         self.connection = connection
         self.context = cntx
         self.sequence = []
-        self.defineRegexPatterns()
         self.tracking = False
         self.trackingparameterserver.emit(self.tracking)
         self.seqID = 0
@@ -43,262 +44,123 @@ class ParsingWorker(QObject):
         self.parameters['A'] = value[5]
         self.parameters['B'] = value[6]
         self.parameters['C'] = value[7]
-
+        
+        
     def add_text(self,text):
         self.text = text
-        
+    
+    #@profile
     def parse_text(self):
         self.sequence =  []
         self.ddsDict = hardwareConfiguration.ddsDict
-        self.defineDict = {}
+        self.defineDict = self.parameters
         loopDict = {}
         lines = self.text.strip().split('\n')
         linenr = 0
         mode = 'none'
         while linenr<len(lines):
-            currentline = lines[linenr].strip()
-            print currentline,mode
-            if len(currentline) < 1 or currentline[0] == '%':
-                linenr += 1
-                continue
-            for avariable,avalue in self.defineDict.iteritems():
-                if avariable in currentline:
-                    currentline = re.sub(r'\b'+avariable+r'\b',str(avalue),currentline)
-            if currentline[0] == '#':
-                if '#def' in currentline:
-                    if mode == 'def':
-                        self.errorlines.append(currentline)
-                        raise Exception('Nested define blocks not allowed')
-                    mode = 'def'
-                elif '#enddef' in currentline:
-                    if mode != 'def':
-                        self.errorlines.append(currentline)
-                        raise Exception('No define block to end')
-                    mode = 'none'
-                elif '#repeat' in currentline:
-                    mode = 'repeat'
-                    pat = r'repeat\s+([aA0-zZ9]+)\s*:\s*range\(([0-9]+,[0-9]+,[0-9]+|[0-9]+,[0-9]+)\)'
-                    loopdata = re.findall(pat,currentline)[0]
-                    looplist = []
-                    if len(loopdata) == 0:
-                        self.errorlines.apped(currentline)
-                        raise Exception('Repeat information missing')
-                elif '#endrepeat' in currentline:
-                    if mode != 'repeat':
-                        self.errorlines.append(currentline)
-                        raise Exception('No repeat block to end')
-                    mode = 'none'
-                    loopvar = loopdata[0]
-                    print loopdata
-                    if len(loopdata[1]) == 3:
-                        loopstart,loopend,loopstep = loopdata[1]
-                    else:
-                        loopstart,loopend = loopdata[1]
-                        loopstep = 1
-                    extralines = []
-                    for i in range(loopstart,loopend,loopstep):
-                        for aline in looplist:
-                            for amatch in re.findall(r'(\(.+?\))',aline):
-                                newstring = amatch
-                                if itervar in amatch:
-                                    newstring = newstring.replace(itervar,str(i))
-                                for anothermatch in re.findall(r'([aA-zZ]+[0-9]*)',newstring):
-                                    newstring = newstring.replace(anothermatch,str(getattr(self,anothermatch)))
-                                newstring = str(eval(newstring))
-                                anline = aline.replace(amatch,newstring)
-                        print anline
-                elif '#steadystate' in currentline:
-                    mode = 'steady'
-                elif '#endsteadystate' in currentline:
-                    if mode != 'steady':
-                        self.errorlines.append(currentline)
-                        raise Exception('No steady state block to end')
-                    mode = 'none'
-                linenr += 1
-                continue
-            if mode == 'def':
-                print currentline
-                if not '=' in currentline:
-                    self.errorlines.append(currentline)
-                    raise Exception('Cannot define {:}'.format(currentline))
+            try:
+                currentline = lines[linenr].strip()
+                if len(currentline) < 1 or currentline[0] == '%':
+                    linenr += 1
+                    continue
+                if mode != 'repeat':
+                    firstsplit = currentline.split('=')
                 else:
-                    lhs,rhs = [i.strip() for i in currentline.split('=')]
-                    self.defineDict[lhs] = eval(rhs)
-                linenr += 1
-                continue
-            elif mode == 'repeat':
-                print currentline
-                looplist.append(currentline)
-            elif mode == 'steadystate':
-                name,currentline = self.findAndReplace(self.channelpattern,currentline)
-                pulsemode,currentline = self.findAndReplace(self.modepattern,currentline)
-                if name[0] not in self.ddsDict.keys():
-                    raise Exception('"{:}" is not a valid channel name'.format(name[0]))
-                pulseparameters,currentline = self.findAndReplace(self.pulsepattern,currentline.strip())
-                for desig,value,unit in pulseparameters:
-                    if desig == 'do':
-                        try:
-                            __freq = WithUnit(float(value),unit)
-                        except ValueError:
-                            __freq = WithUnit(float(value),unit)
-                    elif desig == 'with':
-                        try:
-                            __amp = WithUnit(float(value),unit)
-                        except ValueError:
-                            __amp = WithUnit(float(value),unit)
-                self.steadystatedict[name[0]] = {'freq': __freq['MHz'], 'ampl':__amp['dBm']}
-                linenpr += 1
-                continue
-            
-            name,currentline = self.findAndReplace(self.channelpattern,currentline)
-            pulsemode,currentline = self.findAndReplace(self.modepattern,currentline)
-            if name[0] not in self.ddsDict.keys():
-                raise Exception('"{:}" is not a valid channel name'.format(name[0]))
-            pulseparameters,currentline = self.findAndReplace(self.pulsepattern,currentline.strip())
-            if pulsemode[0] == 'Normal':
-                self.makePulse(name,0,pulseparameters)
-            elif pulsemode[0] == 'Modulation':
-                self.makePulse(name,1,pulseparameters)
-            linenr += 1
-        
-        print self.sequence
-        pass
-        
-        
-        
-        
-        
-        
-    def findAndReplace(self,pattern,string,substitute = '',flags=0):
-        listofmatches = re.findall(pattern,string,flags)
-        newstring = re.sub(pattern,substitute,string,re.DOTALL)
-        return listofmatches,newstring
-
-    def defineRegexPatterns(self):
-        self.channelpattern = r'Channel\s+([aA0-zZ9]+)\s'
-        self.pulsepattern   = r'([a-z]*)\s+([+-]?[0-9]+|[+-]?[0-9]+\.[0-9]+|[aA0-zZ9]+)\s+([aA-zZ]+)\s*'
-        self.looppattern    = r'(?s)(?<=)#repeat(.+?)\s+(.+?)(?=)#endrepeat'
-        self.defpattern     = r'(?s)(?<=)#def(.+?)(?=)#enddef'
-        self.modepattern    = r'in\s+mode\s+([aA-zZ]+)'
-        self.steadypattern     = r'(?s)(?<=)#steadystate(.+?)(?=)#endsteadystate'
-
-    def parseDefine(self,listofstrings,loops):
-        for defblock in listofstrings:
-            for line in defblock.strip().split('\n'):
-                if len(line) == 0:
-                    continue
-                try:
-                    if line[0] == '%':
-                        continue
-                    if '=' in line:
-                        if "ParameterVault" in line.split():
-                            line = re.sub(r'from|ParameterVault','',line)
-                            param = line.split()[2]
-                            line =re.sub(param,str(self.parameters[param]),line)
-                        exec('self.' + line.strip())
+                    firstsplit = []
+                if len(firstsplit) == 2:
+                    lhs,rhs = [i.strip() for i in firstsplit]
+                    try:
+                        self.defineDict[lhs] = eval(rhs)
+                    except NameError,e:
+                        for aname,avalue in self.defineDict.iteritems():
+                            rhs = re.sub(r'\b' + aname + r'\b',str(avalue),rhs)
+                        if 'ParameterVault' in rhs:
+                            rhs = rhs.split(None,1)
+                        self.defineDict[lhs] = eval(rhs)
+                elif len(firstsplit) > 2:
+                    raise Exception('Too many "=" in line.')
+                else:
+                    if currentline[0] == '#':
+                        firstword = currentline.split(None,1)[0]
+                        if firstword == '#repeat':
+                            mode = 'repeat'
+                            loopdata = currentline.split(' ',1)[1]
+                            loopdata = loopdata.split(':',1)  
+                            looplist = []
+                            if len(loopdata) == 0:
+                                raise Exception('Repeat information missing')
+                        elif firstword == '#endrepeat':
+                            if mode != 'repeat':
+                                raise Exception('No repeat block to end')
+                            mode = 'none'
+                            loopvar = loopdata[0].strip()
+                            loopdata = loopdata[1].strip()[6:-1].split(',')
+                            if len(loopdata) == 3:
+                                loopstart,loopend,loopstep = [int(anumber) for anumber in loopdata]
+                            else:
+                                loopstart,loopend = [int(anumber) for anumber in loopdata]
+                                loopstep = 1
+                            extralines = []
+                            newlooplist = []
+                            for i in range(loopstart,loopend,loopstep):
+                                for aline in looplist:
+                                    newstring = re.sub(r'\b'+loopvar+r'\b',str(i),aline)
+                                    newlooplist.append(newstring)
+                            for aline in reversed(newlooplist):
+                                lines.insert(linenr+1,aline)    #adds all the loop lines to the stack of lines
+                        elif firstword == '#steadystate':
+                            mode = 'steady'
+                        elif firstword == '#endsteadystate':
+                            if mode != 'steady':
+                                raise Exception('No steady state block to end')
+                            mode = 'none'
                     else:
-                        words = line.strip().split()
-                        exec('self.'+words[1]+' = 0.0')
-                except Exception,e:
-                    self.errorlines.append(line)
-                    print 'Cannot define "{:}"'.format(line)
-
-
-    def parseLoop(self,listofstrings):
-        for loopparams, lines in listofstrings:
-            try:
-                begin,end,it = loopparams.split(',')
-                lines = lines.strip()
-                itervar = begin.split('=')[0].strip()
-                begin=int(begin.split('=')[1])
-                it = int(it.split('+')[1])
-                end = int(end.split('<')[1])
-            except Exception:
-                self.errorlines.append(lines)
-                print 'Cannot parse loop'
-            
-            try:
-                newlines = ''
-                for i in np.arange(begin,end,it):
-                    for aline in lines.split('\n'):
-                        if aline[0] == '%':
-                            continue
-                        for amatch in re.findall(r'(\(.+?\))',aline):
-                            newstring = amatch
-                            if itervar in amatch:
-                                 newstring = newstring.replace(itervar,str(i))
-                            for anothermatch in re.findall(r'([aA-zZ]+[0-9]*)',newstring):
-                                newstring = newstring.replace(anothermatch,str(getattr(self,anothermatch)))
-                            newstring = str(eval(newstring))
-                            anline = aline.replace(amatch,newstring)
-                        newlines += anline + '\n'
-                self.parsePulses(newlines,True)
+                        if mode == 'none':
+                            pulseparameters = []
+                            name,currentline = currentline.split(':',1)
+                            if name.strip() not in self.ddsDict.keys():
+                                raise Exception('"{:}" is not a valid channel name'.format(name))
+                            parameters = currentline.split(',')
+                            for aparameter in parameters:
+                                aparameter = aparameter.split()
+                                if len(aparameter) == 3:
+                                    pulseparameters.append(aparameter)
+                                elif len(aparameter) == 2 and aparameter[0].lower() == 'mode':
+                                    pulsemode = aparameter[1]
+                                else:
+                                    raise Exception('Cannot parse pulse')
+                            if pulsemode.lower() == 'normal':
+                                self.makePulse(name,0,pulseparameters)
+                            elif pulsemode.lower() == 'modulation':
+                                self.makePulse(name,1,pulseparameters)
+                        elif mode == 'repeat':
+                            looplist.append(currentline)
+                        elif mode == 'steadystate':
+                            name,currentline = self.findAndReplace(self.channelpattern,currentline)
+                            pulsemode,currentline = self.findAndReplace(self.modepattern,currentline)
+                            if name not in self.ddsDict.keys():
+                                raise Exception('"{:}" is not a valid channel name'.format(name[0]))
+                            pulseparameters,currentline = self.findAndReplace(self.pulsepattern,currentline.strip())
+                            for desig,value,unit in pulseparameters:
+                                if desig == 'do':
+                                    try:
+                                        __freq = WithUnit(float(value),unit)
+                                    except ValueError:
+                                        __freq = WithUnit(float(value),unit)
+                                elif desig == 'with':
+                                    try:
+                                        __amp = WithUnit(float(value),unit)
+                                    except ValueError:
+                                        __amp = WithUnit(float(value),unit)
+                            self.steadystatedict[name] = {'freq': __freq['MHz'], 'ampl':__amp['dBm']}
             except Exception,e:
-                self.errorlines.append(aline)
+                self.errorlines.append(currentline)
                 print e
-                
-    def parseSteadystate(self,listofstrings):
-        self.steadystatedict = {}
-        from labrad.units import WithUnit
-        for block in listofstrings:
-            for line in block.strip().split('\n'):
-                try:
-                    if line[0] == '%':
-                        continue
-                    name,line = self.findAndReplace(self.channelpattern,line)
-                    mode,line = self.findAndReplace(self.modepattern,line)
-                    if name[0] not in self.ddsDict.keys():
-                        raise Exception('"{:}" is not a valid channel name'.format(name[0]))
-                    pulseparameters,line = self.findAndReplace(self.pulsepattern,line.strip())
-                    for desig,value,unit in pulseparameters:
-                        if desig == 'do':
-                            try:
-                                __freq = WithUnit(float(value),unit)
-                            except ValueError:
-                                __freq = WithUnit(float(value),unit)
-                        elif desig == 'with':
-                            try:
-                                __amp = WithUnit(float(value),unit)
-                            except ValueError:
-                                __amp = WithUnit(float(value),unit)
-                    self.steadystatedict[name[0]] = {'freq': __freq['MHz'], 'ampl':__amp['dBm']}
-                except Exception,e:
-                    self.errorlines.append(line)
-                    print e
-        for aname in self.ddsDict.keys():
-            if aname in self.steadystatedict:
-                self.ddsDict[aname].frequency = self.steadystatedict[aname]['freq']
-                self.ddsDict[aname].amplitude = self.steadystatedict[aname]['ampl']
-            else:
-                self.ddsDict[aname].frequency = 0
-                self.ddsDict[aname].amplitude = -37
-
-    def parsePulses(self,blockoftext,fromloop = False):
-        if len(blockoftext.strip())==0:
-            return
-        for line in blockoftext.strip().split('\n'):
-            try:
-                if len(line.strip()) == 0:
-                    continue
-                elif line[0] == '%':
-                    continue
-                name,nline = self.findAndReplace(self.channelpattern,line)
-                mode,nline = self.findAndReplace(self.modepattern,nline)
-                if name[0] not in self.ddsDict.keys():
-                        raise Exception('"{:}" is not a valid channel name'.format(name[0]))
-                pulseparameters,nline = self.findAndReplace(self.pulsepattern,nline.strip())
-                if mode[0] == 'Normal':
-                    self.makePulse(name,0,pulseparameters)
-                elif mode[0] == 'Modulation':
-                    self.makePulse(name,1,pulseparameters)
-            except Exception,e:
-                    if fromloop:
-                        raise Exception,e
-                    print e
-                    self.errorlines.append(line)
-
+            linenr += 1
+    
+    #@profile
     def makePulse(self,name,mode,parameters):
-        from labrad.units import WithUnit
         __phase = WithUnit(0,"deg")
         if mode == 0:
             __modespecific1 = WithUnit(0,'MHz')
@@ -306,46 +168,72 @@ class ParsingWorker(QObject):
         elif mode == 1:
             __modespecific1 = WithUnit(0,'MHz')
             __modespecific2 = WithUnit(0,'MHz')
-        
+        freqramp = False
+        ampramp = False
         for desig,initvalue,unit in parameters:
             wrongunit = False
             try:
                 value = float(initvalue)
             except ValueError:
                 try:
-                    value = getattr(self,initvalue.strip())
+                    value = float(self.defineDict[initvalue])
                 except Exception:
                     raise Exception('"{:}" is not defined'.format(initvalue.strip()))
-            if   desig == 'do':
+            desig = desig.lower()
+            if   desig == 'freq':
                 __freq = WithUnit(float(value),unit)
-                wrongunit = wrongunit or not __freq.isCompatible('Hz')
+                #wrongunit = __freq.isCompatible('Hz')
             elif desig == 'at':
                 __begin = WithUnit(float(value) - self.timeoffset,unit)
-                wrongunit = wrongunit or not __begin.isCompatible('s')
+                #wrongunit = __begin.isCompatible('s')
             elif desig == 'for':
                 __dur = WithUnit(float(value),unit)
-                wrongunit = wrongunit or not __dur.isCompatible('s')
-            elif desig == 'with':
+                #wrongunit = __dur.isCompatible('s')
+            elif desig == 'amp':
                 __amp = WithUnit(float(value),unit)
-                wrongunit = wrongunit or not __amp.isCompatible('dBm')
-            elif desig == 'freqramp' and mode == 0:
-                __modespecific1 = WithUnit(float(value),unit)
-                wrongunit = wrongunit or not __modespecific1.isCompatible('Hz')
-            elif desig == 'ampramp' and mode == 0:
-                __modespecific2 = WithUnit(float(value),unit)
-                wrongunit = wrongunit or not __modespecific2.isCompatible('dBm')
+                #wrongunit = __amp.isCompatible('dBm')
+            elif desig == 'fromfreq' and mode == 0:
+                freqramp = True
+                initialfreq = WithUnit(float(value),unit)
+                #wrongunit = __modespecific1.isCompatible('Hz')
+            elif desig == 'fromamp' and mode == 0:
+                ampramp = True
+                initialamp = WithUnit(float(value),unit)
+                #wrongunit = __modespecific2.isCompatible('dBm')
             elif desig == 'modfreq' and mode == 1:
                 __modespecific1 = WithUnit(float(value),unit)
-                wrongunit = wrongunit or not __modespecific1.isCompatible('Hz')
+                #wrongunit = __modespecific1.isCompatible('Hz')
             elif desig == 'modexcur' and mode == 1:
                 __modespecific2 = WithUnit(float(value),unit)
-                wrongunit = wrongunit or not __modespecific2.isCompatible('Hz')
+                #wrongunit = __modespecific2.isCompatible('Hz')
             else:
                 raise Exception('"{:}" is not a valid keyword'.format(desig))
-            if wrongunit:
-                raise Exception('"{:}" not allowed as units for {:}'.format(unit,value))
-                
-        self.sequence.append((name[0],__begin,__dur,__freq,__amp,__phase,__modespecific1,__modespecific2,mode))
+            #if not wrongunit:
+            #    raise Exception('"{:}" not allowed as units for {:}'.format(unit,value))
+        if freqramp:
+            target = __freq['MHz']
+            initial = initialfreq['MHz']
+            dur = __dur['ms'] 
+            dur = dur - 0.002 #shorten the percieved duration by a microsecond to ensure that the end of the ramp is reached. The pulse still has the full duration
+            rate = abs(target-initial)/dur # get the rate in MHz/ms
+            __modespecific1 = WithUnit(float(rate),'MHz')
+            if not ampramp:
+                initialamp = __amp
+        if ampramp:
+            target = __amp['dBm']
+            initial = initialamp['dBm']
+            dur = __dur['ms'] 
+            dur = dur - 0.002 #shorten the percieved duration by a microsecond to ensure that the end of the ramp is reached. The pulse still has the full duration
+            rate = abs(target-initial)/dur # get the rate in dBm/ms
+            __modespecific2 = WithUnit(float(rate),'dBm')
+            if not freqramp:
+                initialfreq = __freq
+        if freqramp or ampramp:# add extra pulse right in the beginning, to ensure the ramp happens correctly
+            __dur = __dur - WithUnit(0.001,'ms')
+            self.sequence.append((name,__begin,WithUnit(0.001,'ms'),initialfreq,initialamp,__phase,WithUnit(0.0,'MHz'),WithUnit(0.0,'dBm'),mode))
+            self.sequence.append((name,__begin+WithUnit(0.001,'ms'),__dur,__freq,__amp,__phase,__modespecific1,__modespecific2,mode))
+        else:
+            self.sequence.append((name,__begin,__dur,__freq,__amp,__phase,__modespecific1,__modespecific2,mode))
     
     
     def get_binary_repres(self):
@@ -363,7 +251,6 @@ class ParsingWorker(QObject):
         self.tracking = False
         self.trackingparameterserver.emit(self.tracking)
         self.reset_sequence_storage
-    
         
     @pyqtSlot()
     def run(self,text,value = None):
@@ -372,8 +259,15 @@ class ParsingWorker(QObject):
             self.update_parameters(value)
         self.errorlines = []
         self.parse_text()
-        binary,ttl = self.get_binary_repres() 
-        return (binary,ttl,value,self.errorlines)
+        if len(self.errorlines) == 0:
+            try:
+                binary,ttl = self.get_binary_repres() 
+                return (binary,ttl,value,self.errorlines)
+            except Exception,e:
+                return (0,0,value,['Binary compilation failed'])
+        else:
+            return (0,0,value,self.errorlines)
+            
         
 class Sequence():
     """Sequence for programming pulses"""
@@ -560,14 +454,19 @@ class Sequence():
             ramprange = channel.boardramprange
 
             if ramp_rate < ramprange[0]:
+                if ramp_rate != 0:
+                    print '{:}: freqramp too slow, set to 0 ramp'.format(channel.name)
                 ramp_rate = ramprange[0] #automatically becomes zero
             elif ramp_rate > ramprange[1]:
                 ramp_rate = ramprange[1]
-
+                print '{:}: freqramp too fast - clipping at {:}'.format(channel.name,ramprange[1])
             if amp_ramp_rate < amp_ramp_range[0]:
+                if amp_ramp_rate != 0:
+                    print '{:}: ampramp too slow - set to 0 ramp'.format(channel.name)
                 slope = 1./amp_ramp_range[1]
             elif amp_ramp_rate >= amp_ramp_range[1]:
                 slope = 1./(amp_ramp_range[1])*1.01
+                print '{:}: ampramp too fast - clipping at {:}'.format(channel.name,amp_ramp_range[1])
             else:
                 slope = 1./(amp_ramp_rate)
             slope_range = (1./amp_ramp_range[1],1./amp_ramp_range[0])
