@@ -1,4 +1,5 @@
 from PyQt4.QtCore import QThread, pyqtSignal, QObject, pyqtSlot, QMutex, QMutexLocker
+from PyQt4 import QtGui
 from twisted.internet.defer import inlineCallbacks, returnValue  
 import threading
 import re
@@ -9,21 +10,22 @@ from decimal import Decimal
 import sys
 
 global harwareConfiguration
-
+global WithUnit
 class ParsingWorker(QObject):
     trackingparameterserver = pyqtSignal(bool)
     parsermessages = pyqtSignal(str)
     new_sequence_trigger = pyqtSignal(list,int,list)
 
 
-    def __init__(self,hwconfigpath,text,reactor,connection,cntx):
+    def __init__(self,hwconfigpath,reactor,connection,cntx):
+        global WithUnit
+        from labrad.units import WithUnit
         super(ParsingWorker,self).__init__()
-        self.text = text
+        self.text = ""
         self.reactor = reactor
         self.connection = connection
         self.context = cntx
         self.sequence = []
-        self.defineRegexPatterns()
         self.tracking = False
         self.trackingparameterserver.emit(self.tracking)
         self.seqID = 0
@@ -31,7 +33,7 @@ class ParsingWorker(QObject):
         self.steadystatedict = {}
         self.lastannouncement = (0L,0L,0,0L,False,0.0,0.0,0.0)
         self.timeoffset = 350
-        self.sequencetimelength = 1000
+        self.endtime = 1000
         sys.path.append(hwconfigpath)
         global hardwareConfiguration
         from hardwareConfiguration import hardwareConfiguration
@@ -42,206 +44,201 @@ class ParsingWorker(QObject):
         self.parameters['A'] = value[5]
         self.parameters['B'] = value[6]
         self.parameters['C'] = value[7]
-
+        
+        
     def add_text(self,text):
         self.text = text
-        
+    
+    #@profile
     def parse_text(self):
         self.sequence =  []
         self.ddsDict = hardwareConfiguration.ddsDict
-        #tic = time.clock()
-        defs,reducedtext =  self.findAndReplace(self.defpattern,self.text,re.DOTALL)
-        loops,reducedtext = self.findAndReplace(self.looppattern,reducedtext,re.DOTALL)
-        steadys,reducedtext = self.findAndReplace(self.steadypattern,reducedtext,re.DOTALL)
-        self.parseDefine(defs,loops)
-        self.parseLoop(loops)
-        self.parseSteadystate(steadys)
-        self.parsePulses(reducedtext)
-        #toc = time.clock()
-        #print 'Parsing time:                  ',toc-tic
-        
-        
-    def findAndReplace(self,pattern,string,flags=0):
-        listofmatches = re.findall(pattern,string,flags)
-        newstring = re.sub(pattern,'',string,re.DOTALL)
-        return listofmatches,newstring
-
-    def defineRegexPatterns(self):
-        self.channelpattern = r'Channel\s+([aA0-zZ9]+)\s'
-        self.pulsepattern   = r'([a-z]*)\s+([+-]?[0-9]+|[+-]?[0-9]+\.[0-9]+|var\s+[aA0-zZ9]+)\s+([aA-zZ]+)'
-        self.looppattern    = r'(?s)(?<=)#repeat(.+?)\s+(.+?)(?=)#endrepeat'
-        self.defpattern     = r'(?s)(?<=)#def(.+?)(?=)#enddef'
-        self.modepattern    = r'in\s+mode\s+([aA-zZ]+)'
-        self.steadypattern     = r'(?s)(?<=)#steadystate(.+?)(?=)#endsteadystate'
-
-    def parseDefine(self,listofstrings,loops):
-        for defblock in listofstrings:
-            for line in defblock.strip().split('\n'):
-                if line[0] == '%':
+        self.defineDict = self.parameters
+        loopDict = {}
+        lines = self.text.strip().split('\n')
+        linenr = 0
+        mode = 'none'
+        while linenr<len(lines):
+            try:
+                currentline = lines[linenr].strip()
+                if len(currentline) < 1 or currentline[0] == '%':
+                    linenr += 1
                     continue
-                if '=' in line:
-                    if "ParameterVault" in line.split():
-                        line = re.sub(r'from|ParameterVault','',line)
-                        param = line.split()[2]
-                        line =re.sub(param,str(self.parameters[param]),line)
-                    exec('self.' + line.strip())
+                if mode != 'repeat':
+                    firstsplit = currentline.split('=')
                 else:
-                    words = line.strip().split()
-                    exec('self.'+words[1]+' = 0.0')
-
-
-    def parseLoop(self,listofstrings):
-        for loopparams, lines in listofstrings:
-            begin,end,it = loopparams.split(',')
-            lines = lines.strip()
-            itervar = begin.split('=')[0].strip()
-            begin=int(begin.split('=')[1])
-            it = int(it.split('+')[1])
-            end = int(end.split('<')[1])
-            newlines = ''
-            for i in np.arange(begin,end,it):
-                for aline in lines.split('\n'):
-                    if aline[0] == '%':
-                        continue
-                    for amatch in re.findall(r'(\(.+?\))',aline):
-                        newstring = amatch
-                        if 'var' in amatch:
-                            newstring = amatch.replace('var ','self.')
-                        if itervar in amatch:
-                             newstring = newstring.replace(itervar,str(i))
-                        newstring = str(eval(newstring))
-                        aline = aline.replace(amatch,newstring)
-                    newlines += aline + '\n'
-            self.parsePulses(newlines)
-
-    def parseSteadystate(self,listofstrings):
-        self.steadystatedict = {}
-        from labrad.units import WithUnit
-        for block in listofstrings:
-            for line in block.strip().split('\n'):
-                if line[0] == '%':
-                    continue
-                name,line = self.findAndReplace(self.channelpattern,line)
-                mode,line = self.findAndReplace(self.modepattern,line)
-                pulseparameters,line = self.findAndReplace(self.pulsepattern,line.strip())
-                for desig,value,unit in pulseparameters:
-                    if desig == 'do':
-                        try:
-                            __freq = WithUnit(float(value),unit)
-                        except ValueError:
-                            __freq = WithUnit(float(value),unit)
-                    elif desig == 'with':
-                        try:
-                            __amp = WithUnit(float(value),unit)
-                        except ValueError:
-                            __amp = WithUnit(float(value),unit)
-                self.steadystatedict[name[0]] = {'freq': __freq['MHz'], 'ampl':__amp['dBm']}
-        for aname in self.ddsDict.keys():
-            if aname in self.steadystatedict:
-                self.ddsDict[aname].frequency = self.steadystatedict[aname]['freq']
-                self.ddsDict[aname].amplitude = self.steadystatedict[aname]['ampl']
+                    firstsplit = []
+                if len(firstsplit) == 2:
+                    lhs,rhs = [i.strip() for i in firstsplit]
+                    try:
+                        self.defineDict[lhs] = eval(rhs)
+                    except NameError,e:
+                        for aname,avalue in self.defineDict.iteritems():
+                            rhs = re.sub(r'\b' + aname + r'\b',str(avalue),rhs)
+                        if 'ParameterVault' in rhs:
+                            rhs = rhs.split(None,1)
+                        self.defineDict[lhs] = eval(rhs)
+                elif len(firstsplit) > 2:
+                    raise Exception('Too many "=" in line.')
+                else:
+                    if currentline[0] == '#':
+                        firstword = currentline.split(None,1)[0]
+                        if firstword == '#repeat':
+                            mode = 'repeat'
+                            loopdata = currentline.split(' ',1)[1]
+                            loopdata = loopdata.split(':',1)  
+                            looplist = []
+                            if len(loopdata) == 0:
+                                raise Exception('Repeat information missing')
+                        elif firstword == '#endrepeat':
+                            if mode != 'repeat':
+                                raise Exception('No repeat block to end')
+                            mode = 'none'
+                            loopvar = loopdata[0].strip()
+                            loopdata = loopdata[1].strip()[6:-1].split(',')
+                            if len(loopdata) == 3:
+                                loopstart,loopend,loopstep = [int(anumber) for anumber in loopdata]
+                            else:
+                                loopstart,loopend = [int(anumber) for anumber in loopdata]
+                                loopstep = 1
+                            extralines = []
+                            newlooplist = []
+                            for i in range(loopstart,loopend,loopstep):
+                                for aline in looplist:
+                                    newstring = re.sub(r'\b'+loopvar+r'\b',str(i),aline)
+                                    newlooplist.append(newstring)
+                            for aline in reversed(newlooplist):
+                                lines.insert(linenr+1,aline)    #adds all the loop lines to the stack of lines
+                        elif firstword == '#steadystate':
+                            mode = 'steady'
+                        elif firstword == '#endsteadystate':
+                            if mode != 'steady':
+                                raise Exception('No steady state block to end')
+                            mode = 'none'
+                    else:
+                        if mode == 'none':
+                            pulseparameters = []
+                            name,currentline = currentline.split(':',1)
+                            if name.strip() not in self.ddsDict.keys():
+                                raise Exception('"{:}" is not a valid channel name'.format(name))
+                            parameters = currentline.split(',')
+                            for aparameter in parameters:
+                                aparameter = aparameter.split()
+                                if len(aparameter) == 3:
+                                    pulseparameters.append(aparameter)
+                                elif len(aparameter) == 2 and aparameter[0].lower() == 'mode':
+                                    pulsemode = aparameter[1]
+                                else:
+                                    raise Exception('Cannot parse pulse')
+                            if pulsemode.lower() == 'normal':
+                                self.makePulse(name,0,pulseparameters)
+                            elif pulsemode.lower() == 'modulation':
+                                self.makePulse(name,1,pulseparameters)
+                        elif mode == 'repeat':
+                            looplist.append(currentline)
+                        elif mode == 'steadystate':
+                            name,currentline = self.findAndReplace(self.channelpattern,currentline)
+                            pulsemode,currentline = self.findAndReplace(self.modepattern,currentline)
+                            if name not in self.ddsDict.keys():
+                                raise Exception('"{:}" is not a valid channel name'.format(name[0]))
+                            pulseparameters,currentline = self.findAndReplace(self.pulsepattern,currentline.strip())
+                            for desig,value,unit in pulseparameters:
+                                if desig == 'do':
+                                    try:
+                                        __freq = WithUnit(float(value),unit)
+                                    except ValueError:
+                                        __freq = WithUnit(float(value),unit)
+                                elif desig == 'with':
+                                    try:
+                                        __amp = WithUnit(float(value),unit)
+                                    except ValueError:
+                                        __amp = WithUnit(float(value),unit)
+                            self.steadystatedict[name] = {'freq': __freq['MHz'], 'ampl':__amp['dBm']}
+            except Exception,e:
+                self.errorlines.append(currentline)
+                print e
+            linenr += 1
+    
+    #@profile
+    def makePulse(self,name,mode,parameters):
+        __phase = WithUnit(0,"deg")
+        if mode == 0:
+            __modespecific1 = WithUnit(0,'MHz')
+            __modespecific2 = WithUnit(0,'dBm')
+        elif mode == 1:
+            __modespecific1 = WithUnit(0,'MHz')
+            __modespecific2 = WithUnit(0,'MHz')
+        freqramp = False
+        ampramp = False
+        for desig,initvalue,unit in parameters:
+            wrongunit = False
+            try:
+                value = float(initvalue)
+            except ValueError:
+                try:
+                    value = float(self.defineDict[initvalue])
+                except Exception:
+                    raise Exception('"{:}" is not defined'.format(initvalue.strip()))
+            desig = desig.lower()
+            if   desig == 'freq':
+                __freq = WithUnit(float(value),unit)
+                #wrongunit = __freq.isCompatible('Hz')
+            elif desig == 'at':
+                __begin = WithUnit(float(value) - self.timeoffset,unit)
+                #wrongunit = __begin.isCompatible('s')
+            elif desig == 'for':
+                __dur = WithUnit(float(value),unit)
+                #wrongunit = __dur.isCompatible('s')
+            elif desig == 'amp':
+                __amp = WithUnit(float(value),unit)
+                #wrongunit = __amp.isCompatible('dBm')
+            elif desig == 'fromfreq' and mode == 0:
+                freqramp = True
+                initialfreq = WithUnit(float(value),unit)
+                #wrongunit = __modespecific1.isCompatible('Hz')
+            elif desig == 'fromamp' and mode == 0:
+                ampramp = True
+                initialamp = WithUnit(float(value),unit)
+                #wrongunit = __modespecific2.isCompatible('dBm')
+            elif desig == 'modfreq' and mode == 1:
+                __modespecific1 = WithUnit(float(value),unit)
+                #wrongunit = __modespecific1.isCompatible('Hz')
+            elif desig == 'modexcur' and mode == 1:
+                __modespecific2 = WithUnit(float(value),unit)
+                #wrongunit = __modespecific2.isCompatible('Hz')
             else:
-                self.ddsDict[aname].frequency = 0
-                self.ddsDict[aname].amplitude = -37
-
-    def parsePulses(self,blockoftext):
-        if len(blockoftext.strip())==0:
-            return
-        for line in blockoftext.strip().split('\n'):
-            if len(line.strip()) == 0:
-                continue
-            elif line[0] == '%':
-                continue
-            name,line = self.findAndReplace(self.channelpattern,line)
-            mode,line = self.findAndReplace(self.modepattern,line)
-            pulseparameters,line = self.findAndReplace(self.pulsepattern,line.strip())
-            if mode[0] == 'Normal':
-                self.makeNormalPulse(name,0,pulseparameters)
-            elif mode[0] == 'Modulation':
-                self.makeModulationPulse(name,1,pulseparameters)
-
-    def makeNormalPulse(self,name,mode,parameters):
-        from labrad.units import WithUnit
-        __freq, __amp, __begin, __dur = [0]*4
-        __phase = WithUnit(0,"deg")
-        __ramprate = WithUnit(0,'MHz')
-        __ampramp = WithUnit(0,'dBm')
-            
-        for desig,value,unit in parameters:
-            if   desig == 'do':
-                try:
-                    __freq = WithUnit(float(value),unit)
-                except ValueError:
-                    __freq = WithUnit(eval('self.'+value.split()[1].strip()),unit) 
-            elif desig == 'at':
-                try:
-                    __begin = WithUnit(float(value) - self.timeoffset,unit)
-                except ValueError:
-                    __begin = WithUnit(eval('self.'+value.split()[1].strip()) - self.timeoffset,unit)
-            elif desig == 'for':
-                try:
-                    __dur = WithUnit(float(value),unit)
-                except ValueError:
-                    __dur = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-            elif desig == 'with':
-                try:
-                    __amp = WithUnit(float(value),unit)
-                except ValueError:
-                    __amp = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-            elif desig == 'freqramp':
-                try:
-                    __ramprate = WithUnit(float(value),unit)
-                except ValueError:
-                    __ramprate = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-            elif desig == 'ampramp':
-                try:
-                    __ampramp = WithUnit(float(value),unit)
-                except ValueError:
-                    __ampramp = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-        self.sequence.append((name[0],__begin,__dur,__freq,__amp,__phase,__ramprate,__ampramp,mode))
-    
-    def makeModulationPulse(self,name,mode,parameters):
-        from labrad.units import WithUnit
-        __freq, __amp, __begin, __dur, __excur, __modfreq = [0]*6
-        __phase = WithUnit(0,"deg")
-        for desig,value,unit in parameters:
-            if   desig == 'do':
-                try:
-                    __freq = WithUnit(float(value),unit)
-                except ValueError:
-                    __freq = WithUnit(eval('self.'+value.split()[1].strip()),unit) 
-            elif desig == 'at':
-                try:
-                    __begin = WithUnit(float(value) - self.timeoffset,unit)
-                except ValueError:
-                    __begin = WithUnit(eval('self.'+value.split()[1].strip()) - self.timeoffset,unit)
-            elif desig == 'for':
-                try:
-                    __dur = WithUnit(float(value),unit)
-                except ValueError:
-                    __dur = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-            elif desig == 'with':
-                try:
-                    __amp = WithUnit(float(value),unit)
-                except ValueError:
-                    __amp = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-            elif desig == 'modfreq':
-                try:
-                    __modfreq = WithUnit(float(value),unit)
-                except ValueError:
-                    __modfreq = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-            elif desig == 'modexcur':
-                try:
-                    __excur = WithUnit(float(value),unit)
-                except ValueError:
-                    __excur = WithUnit(eval('self.'+value.split()[1].strip()),unit)
-        self.sequence.append((name[0],__begin,__dur,__freq,__amp,__phase,__excur,__modfreq,mode))
-    
+                raise Exception('"{:}" is not a valid keyword'.format(desig))
+            #if not wrongunit:
+            #    raise Exception('"{:}" not allowed as units for {:}'.format(unit,value))
+        if freqramp:
+            target = __freq['MHz']
+            initial = initialfreq['MHz']
+            dur = __dur['ms'] 
+            dur = dur - 0.002 #shorten the percieved duration by a microsecond to ensure that the end of the ramp is reached. The pulse still has the full duration
+            rate = abs(target-initial)/dur # get the rate in MHz/ms
+            __modespecific1 = WithUnit(float(rate),'MHz')
+            if not ampramp:
+                initialamp = __amp
+        if ampramp:
+            target = __amp['dBm']
+            initial = initialamp['dBm']
+            dur = __dur['ms'] 
+            dur = dur - 0.002 #shorten the percieved duration by a microsecond to ensure that the end of the ramp is reached. The pulse still has the full duration
+            rate = abs(target-initial)/dur # get the rate in dBm/ms
+            __modespecific2 = WithUnit(float(rate),'dBm')
+            if not freqramp:
+                initialfreq = __freq
+        if freqramp or ampramp:# add extra pulse right in the beginning, to ensure the ramp happens correctly
+            __dur = __dur - WithUnit(0.001,'ms')
+            self.sequence.append((name,__begin,WithUnit(0.001,'ms'),initialfreq,initialamp,__phase,WithUnit(0.0,'MHz'),WithUnit(0.0,'dBm'),mode))
+            self.sequence.append((name,__begin+WithUnit(0.001,'ms'),__dur,__freq,__amp,__phase,__modespecific1,__modespecific2,mode))
+        else:
+            self.sequence.append((name,__begin,__dur,__freq,__amp,__phase,__modespecific1,__modespecific2,mode))
     
     
     def get_binary_repres(self):
-        self.new_sequence_trigger.emit(self.sequence,self.sequencetimelength,self.steadystatedict.keys())
-        seqObject = Sequence(self.ddsDict,self.steadystatedict,self.sequencetimelength-self.timeoffset)
+        self.new_sequence_trigger.emit(self.sequence,self.endtime,self.steadystatedict.keys())
+        seqObject = Sequence(self.ddsDict,self.steadystatedict,self.endtime-self.timeoffset)
         graphsequence = seqObject.addDDSPulses(self.sequence)
         tic = time.clock()
         binary,ttl = seqObject.progRepresentation()
@@ -254,27 +251,34 @@ class ParsingWorker(QObject):
         self.tracking = False
         self.trackingparameterserver.emit(self.tracking)
         self.reset_sequence_storage
-    
         
     @pyqtSlot()
     def run(self,text,value = None):
         self.text = text
         if value is not None:
             self.update_parameters(value)
+        self.errorlines = []
         self.parse_text()
-        binary,ttl = self.get_binary_repres() 
-        return (binary,ttl,value)
+        if len(self.errorlines) == 0:
+            try:
+                binary,ttl = self.get_binary_repres() 
+                return (binary,ttl,value,self.errorlines)
+            except Exception,e:
+                return (0,0,value,['Binary compilation failed'])
+        else:
+            return (0,0,value,self.errorlines)
+            
         
 class Sequence():
     """Sequence for programming pulses"""
-    def __init__(self,ddsDict,steadystatedict,sequencetimelength):
+    def __init__(self,ddsDict,steadystatedict,endtime):
         self.channelTotal = hardwareConfiguration.channelTotal
         self.timeResolution = Decimal(hardwareConfiguration.timeResolution)
         self.MAX_SWITCHES = hardwareConfiguration.maxSwitches
         self.resetstepDuration = hardwareConfiguration.resetstepDuration
         self.ddsDict = ddsDict
         self.steadystatedict = steadystatedict
-        self.sequenceTimeLength = sequencetimelength
+        self.endtime = endtime
 
         #dictionary in the form time:which channels to switch
         #time is expressed as timestep with the given resolution
@@ -322,7 +326,7 @@ class Sequence():
             else:
                 valuedict[aname] = [(WithUnit(0,'ms'),WithUnit(0,'ms'),WithUnit(0,'MHz'),WithUnit(-37,'dBm'),
                            WithUnit(0,'deg'),WithUnit(0,'MHz'),WithUnit(0,'dBm'),0)]
-                           
+       
         for aname,alist in valuedict.iteritems():
             truncate = False
             values = sorted(alist, key = lambda x: x[0])
@@ -350,11 +354,10 @@ class Sequence():
                 ampl = ampl['dBm'] 
                 phase = phase['deg']
 
-                if (start + dur) > self.sequenceTimeLength/1000.:
-                    dur = self.sequenceTimeLength/1000. - start
+                if (start + dur) > self.endtime/1000.:
+                    dur = self.endtime/1000. - start
                     truncate = True
                     
-
                 if mode == 0: #normal mode
                     modespecific1 = modespecific1['MHz'] #ramp_rate        If anything different from 0, it will ramp while being off
                     modespecific2 = modespecific2['dBm'] #amp_ramp_rate    If anything different from 0, it will ramp while being off
@@ -365,7 +368,7 @@ class Sequence():
                 if nextvalue is not None:
                     nextfreq = nextfreq['MHz']
                     if nextmode == 0: #normal mode
-                        if nextmodespecific1 != 0:
+                        if nextmodespecific1['MHz'] != 0:
                             nextfreq = freq
                         nextmodespecific1 = 0 #ramp_rate        If anything different from 0, it will ramp while being off
                         nextmodespecific2 = 0 #amp_ramp_rate    If anything different from 0, it will ramp while being off
@@ -403,7 +406,7 @@ class Sequence():
                 if start == 0:
                     if dur != 0:
                         self.addDDS(aname, start, num, 'start')
-                        self.addDDS(aname, start + dur, num, 'stop')
+                        self.addDDS(aname, start + dur, num_off, 'stop')
                     else:
                         self.addDDS(aname, start, num, 'begin')
                 elif not dur == 0:#0 length pulses are ignored
@@ -451,27 +454,33 @@ class Sequence():
             ramprange = channel.boardramprange
 
             if ramp_rate < ramprange[0]:
-                ramp_rate = ramprange[0]
+                if ramp_rate != 0:
+                    print '{:}: freqramp too slow, set to 0 ramp'.format(channel.name)
+                ramp_rate = ramprange[0] #automatically becomes zero
             elif ramp_rate > ramprange[1]:
                 ramp_rate = ramprange[1]
-
+                print '{:}: freqramp too fast - clipping at {:}'.format(channel.name,ramprange[1])
             if amp_ramp_rate < amp_ramp_range[0]:
-                amp_ramp_rate = amp_ramp_range[0]
-            elif amp_ramp_rate > amp_ramp_range[1]:
-                amp_ramp_rate = amp_ramp_range[1]
+                if amp_ramp_rate != 0:
+                    print '{:}: ampramp too slow - set to 0 ramp'.format(channel.name)
+                slope = 1./amp_ramp_range[1]
+            elif amp_ramp_rate >= amp_ramp_range[1]:
+                slope = 1./(amp_ramp_range[1])*1.01
+                print '{:}: ampramp too fast - clipping at {:}'.format(channel.name,amp_ramp_range[1])
             else:
-                amp_ramp_rate = 1/amp_ramp_rate
-
-
-
-            for val, rng, precision, extrabits in [(phase,              phaserange, 16, False),
-                                                    (ampl,               amplrange, 16, True),
-                                                    (amp_ramp_rate, amp_ramp_range, 16, False),
-                                                    (ramp_rate,          ramprange, 16, False),
-                                                    (freq,               freqrange, 64, False)]:
+                slope = 1./(amp_ramp_rate)
+            slope_range = (1./amp_ramp_range[1],1./amp_ramp_range[0])
+            for val, rng, precision, extrabits, ampramp in [(phase,             phaserange, 16, False, False),
+                                                           (ampl,               amplrange, 16, True,  False ),
+                                                           (slope,            slope_range, 16, False, True),
+                                                           (ramp_rate,          ramprange, 16, False, False),
+                                                           (freq,               freqrange, 64, False, False)]:
                 minim,maxim = rng                                    
                 resolution = (maxim - minim) / float(2**precision - 1)
-                num = int((val - minim)/resolution) #number representation
+                if ampramp:
+                    num = int(np.ceil((val - minim)/resolution))
+                else:
+                    num = int((val - minim)/resolution) #number representation
                 b = bytearray(precision/8)
                 for i in range(len(b)):
                     tmp = (num//(2**(i*8)))%256
@@ -492,7 +501,6 @@ class Sequence():
             ramping_interval = (10*24.)/2000  # hardcoded in fpga code, 120 ns between each frequency step
             freq_change_rate  = 4 * frequencyexcursion * frequencymodulation # frequency change per second required
             freq_step_size = freq_change_rate * ramping_interval
-            
             for val, rng, precision, extrabits in [(phase,            phaserange, 16, False),
                                                     (ampl,             amplrange, 16, True),
                                                     (freq_step_size,   freqrange, 32, False),
@@ -600,10 +608,10 @@ class Sequence():
                 #add termination
                 #at the end of the sequence, reset dds
                 lastTTL = max(self.switchingTimes.keys())
-                sec = '{0:.9f}'.format(self.sequenceTimeLength/1000.) #round to nanoseconds
+                sec = '{0:.9f}'.format(self.endtime/1000.) #round to nanoseconds
                 sec= Decimal(sec) #convert to decimal 
                 tmpTime = ( sec / self.timeResolution).to_integral_value()
-                #lastTTL = tmpTime
+                lastTTL = tmpTime
                 if lastTTL > (int(tmpTime) + self.resetstepDuration):
                     print lastTTL, int(tmpTime)
                     print 'switches exceed sequence length, truncated'
