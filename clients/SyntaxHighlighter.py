@@ -58,7 +58,7 @@ class MyHighlighter( QSyntaxHighlighter ):
       brush = QBrush( QColor('magenta'), Qt.SolidPattern )
       parametervaultvars.setForeground( brush )
       parametervaultvars.setFontWeight( QFont.Black )
-      for word in ['A','B','C']:
+      for word in ['A','B','C', 'f_pol','p_pol','f_blow','MOT dis']:
         pattern = QRegExp( "\\b" + word + "\\b")
         rule = HighlightingRule( pattern, parametervaultvars )
         self.highlightingRules.append( rule )

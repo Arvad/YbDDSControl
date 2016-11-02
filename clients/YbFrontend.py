@@ -11,6 +11,7 @@ from DDS_CONTROL import DDS_CONTROL
 from parsingworker import ParsingWorker
 from pulserworker import PulserWorker
 import time
+import sys
 
 
 def buttonstyle(color, **kwargs):
@@ -73,6 +74,8 @@ class mainwindow(QtGui.QMainWindow):
         self.setup_parser()
         self.restoreGui()
         self.messageout('Initialization done')
+        sys.stdout = EmittingStream(textWritten=self.normalOutputWritten)
+        sys.stderr = EmittingStream(textWritten=self.normalOutputWritten)
         
         
 
@@ -102,13 +105,17 @@ class mainwindow(QtGui.QMainWindow):
         controlwidget = self.makeControlWidget()
         sequencewidget = self.makeSequenceWidget()
         spectrumplottingwidget = self.makeSpectrumPlottingWidget()
+        stdoutwidget = self.makeStdOutputWidget()
+
         centralwidget = QtGui.QWidget()
         tabwidget = QtGui.QTabWidget()
 
         tabwidget.addTab(sequencewidget,'Sequence')
         tabwidget.addTab(controlwidget,'Controls')
         tabwidget.addTab(spectrumplottingwidget,'Spectra')
-
+        tabwidget.addTab(stdoutwidget,'StdOut')
+        
+        
         layout = QtGui.QHBoxLayout(self)
         layout.addWidget(tabwidget)
         centralwidget.setLayout(layout)
@@ -169,8 +176,24 @@ class mainwindow(QtGui.QMainWindow):
         from SpectrumPlottingWidget import SpectrumPlottingWidget
         widget = SpectrumPlottingWidget()
         return widget
-        
+    
+    #################
+    # Std Output panel
+    #################
+    def makeStdOutputWidget(self):
+        widget = QtGui.QWidget()
+        label = QtGui.QLabel('Terminal output of Frontend')
+        self.stdouttextfield = QtGui.QTextEdit()
+        self.stdouttextfield.setReadOnly(True)
+        self.stdouttextfield.contextMenuEvent = self.messagebox_contextmenu
+        layout = QtGui.QVBoxLayout()
+        layout.addWidget(label)
+        layout.addWidget(self.stdouttextfield)
+        widget.setLayout(layout)
+        return widget
 
+
+    
     #################
     # Control tab panel
     #################
@@ -226,13 +249,23 @@ class mainwindow(QtGui.QMainWindow):
         font.setFamily( "Courier" )
         font.setFixedPitch( True )
         font.setPointSize( 10 )
+        colorlist = [QtGui.QColor(255,255,255), #Mode 1 - white
+                     QtGui.QColor(255,240,240), #Mode 2 - red
+                     QtGui.QColor(240,255,240), #Mode 3 - green
+                     QtGui.QColor(240,240,255)] #Mode 4 - blue
         for i in range(len(self.writingwidgets)):
             awritingwidget = self.writingwidgets[i]
+            pal = awritingwidget.palette()
+            pal.setColor(QtGui.QPalette.Base, colorlist[i])
+            awritingwidget.setPalette(pal)
             awritingwidget.textChanged.connect(self.startbuttonloop)
             awritingwidget.setFont(font)
             highlighter = MyHighlighter( awritingwidget, 'Classic')
             self.writingtab.addTab(awritingwidget,'Mode {:}'.format(i+1))
-
+            p = awritingwidget.palette()
+            p.setColor(awritingwidget.backgroundRole(), Qt.red)
+            awritingwidget.setPalette(p)
+#            self.writingtab.tabBar().setTabTextColor(i,colorlist[i])
         leftwidget=QtGui.QWidget()
         buttonpanel = self.makeButtonPanel()
         leftlayout = QtGui.QGridLayout()
@@ -423,7 +456,16 @@ class mainwindow(QtGui.QMainWindow):
         self.Messagebox.moveCursor(QtGui.QTextCursor.End)
         self.Messagebox.insertPlainText("\n"+stamp+" - "+text)
         self.Messagebox.moveCursor(QtGui.QTextCursor.End)
-
+    
+    
+    #################
+    #writes Stdout and Stderr
+    #################   
+    def normalOutputWritten(self, text):
+        cursor = self.stdouttextfield.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.End)
+        cursor.insertText(text)
+        cursor.movePosition(QtGui.QTextCursor.End)
     
     #################
     #Line triggering
@@ -638,7 +680,7 @@ class mainwindow(QtGui.QMainWindow):
     def output_sequence(self,ignore,packet):
         self.hardwarelock = True
         if not self.stopping:
-            binary,ttl,message, errorlist = packet
+            binary,ttl,message, errorlist, metablocks = packet
             self.update_param_labels(message,'now')
             pulser = yield self.connection.get_server('Pulser')
             yield pulser.new_sequence()
@@ -649,16 +691,24 @@ class mainwindow(QtGui.QMainWindow):
             if started:
                 completed = yield pulser.wait_sequence_done((self.endtimevalue-self.offsetvalue)/1000.)
             counts = yield pulser.get_metablock_counts()
+            if counts == metablocks and completed:
+                returnmessage = {message[0],message[1],message[2],message[3],True,0,0,0}  #return message (confirm) in the form (TS,seq,mode,TT,good(bool),A,B,C)
             yield pulser.stop_sequence()
             if not started or not completed:
+                returnmessage = {message[0],message[1],message[2],message[3],False,0,0,0}  #return message (confirm) in the form (TS,seq,mode,TT,good(bool),A,B,C)
                 self.messageout('Pulser: Timed out')
-            self.sendIdtoParameterVault(message)
+            self.sendIdtoParameterVault(returnmessage)
         self.threadcounter -= 1
         if self.threadcounter == 0:
             self.messageout('Stopped')
         self.hardwarelock = False
 
+class EmittingStream(QObject):
 
+    textWritten = pyqtSignal(str)
+
+    def write(self, text):
+        self.textWritten.emit(str(text))
 
 if __name__== '__main__':
     app = QtGui.QApplication( [])

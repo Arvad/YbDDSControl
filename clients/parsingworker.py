@@ -44,6 +44,10 @@ class ParsingWorker(QObject):
         self.parameters['A'] = value[5]
         self.parameters['B'] = value[6]
         self.parameters['C'] = value[7]
+        self.parameters['f_pol'] = value[8]
+        self.parameters['p_pol'] = value[9]
+        self.parameters['f_blow'] = value[10]
+        self.parameters['MOT dis'] = value[13]
         
         
     def add_text(self,text):
@@ -241,9 +245,9 @@ class ParsingWorker(QObject):
         seqObject = Sequence(self.ddsDict,self.steadystatedict,self.endtime-self.timeoffset)
         graphsequence = seqObject.addDDSPulses(self.sequence)
         tic = time.clock()
-        binary,ttl = seqObject.progRepresentation()
+        binary,ttl,metablocks = seqObject.progRepresentation()
         
-        return str(binary),str(ttl)
+        return str(binary),str(ttl),metablocks
                 
 
     @pyqtSlot()
@@ -261,12 +265,12 @@ class ParsingWorker(QObject):
         self.parse_text()
         if len(self.errorlines) == 0:
             try:
-                binary,ttl = self.get_binary_repres() 
-                return (binary,ttl,value,self.errorlines)
+                binary,ttl,metablocks = self.get_binary_repres() 
+                return (binary,ttl,value,self.errorlines,metablocks)
             except Exception,e:
-                return (0,0,value,['Binary compilation failed'])
+                return (0,0,value,['Binary compilation failed'],0)
         else:
-            return (0,0,value,self.errorlines)
+            return (0,0,value,self.errorlines,0)
             
         
 class Sequence():
@@ -564,7 +568,7 @@ class Sequence():
         #    print '------------------'
         #    print binascii.hexlify(abyte),len(abyte)
         fullbinary = bytearray('e000'.decode('hex'))  + fullbinary + bytearray('F000'.decode('hex'))
-        return fullbinary, self.ttlProgram
+        return fullbinary, self.ttlProgram,metablockcounter
         
     def userAddedDDS(self):
         return bool(len(self.ddsSettingList))
