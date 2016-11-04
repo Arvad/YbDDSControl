@@ -249,14 +249,14 @@ class mainwindow(QtGui.QMainWindow):
         font.setFamily( "Courier" )
         font.setFixedPitch( True )
         font.setPointSize( 10 )
-        colorlist = [QtGui.QColor(255,255,255), #Mode 1 - white
+        self.colorlist = [QtGui.QColor(255,255,255), #Mode 1 - white
                      QtGui.QColor(255,240,240), #Mode 2 - red
                      QtGui.QColor(240,255,240), #Mode 3 - green
                      QtGui.QColor(240,240,255)] #Mode 4 - blue
         for i in range(len(self.writingwidgets)):
             awritingwidget = self.writingwidgets[i]
             pal = awritingwidget.palette()
-            pal.setColor(QtGui.QPalette.Base, colorlist[i])
+            pal.setColor(QtGui.QPalette.Base, self.colorlist[i])
             awritingwidget.setPalette(pal)
             awritingwidget.textChanged.connect(self.startbuttonloop)
             awritingwidget.setFont(font)
@@ -639,17 +639,18 @@ class mainwindow(QtGui.QMainWindow):
         
         
     def wait_for_output(self,packet):
-        widget = self.writingwidgets[packet[2][2]-1]
+        mode = packet[2][2]-1 #because python 0 indexes
+        widget = self.writingwidgets[mode]
         if self.parsingerror:
             a = QtGui.QTextCharFormat()
-            a.setBackground(QtGui.QBrush(QtGui.QColor('white')))
+            a.setBackground(QtGui.QBrush(QtGui.QColor(self.colorlist[mode])))
             
             cursor = widget.textCursor()
             cursor.select(QtGui.QTextCursor.Document)
             cursor.setCharFormat(a)
             self.parsingerror = False
         if len(packet[3]) > 0:
-            self.messageout('Parsing error in Mode {:}'.format(packet[2][2]))
+            self.messageout('Parsing error in Mode {:}'.format(mode+1))
             self.threadcounter -= 1
             self.messageout('Stopped')
             a = QtGui.QTextCharFormat()
@@ -658,7 +659,7 @@ class mainwindow(QtGui.QMainWindow):
                 cursor = widget.document().find(line)
                 cursor.select(QtGui.QTextCursor.BlockUnderCursor)
                 cursor.setCharFormat(a)
-                self.messageout('Problems in Mode {:}'.format(packet[2][2]))
+                self.messageout('Problems in Mode {:}'.format(mode+1))
             self.parsingerror = True
             return
         
@@ -681,6 +682,8 @@ class mainwindow(QtGui.QMainWindow):
         self.hardwarelock = True
         if not self.stopping:
             binary,ttl,message, errorlist, metablocks = packet
+            returnmessage = (message[0],message[1],message[2],message[3],False,0.,0.,0.)#return message (confirm) in the form (TS,seq,mode,TT,good(bool),A,B,C)
+            completed = False
             self.update_param_labels(message,'now')
             pulser = yield self.connection.get_server('Pulser')
             yield pulser.new_sequence()
@@ -691,12 +694,15 @@ class mainwindow(QtGui.QMainWindow):
             if started:
                 completed = yield pulser.wait_sequence_done((self.endtimevalue-self.offsetvalue)/1000.)
             counts = yield pulser.get_metablock_counts()
-            if counts == metablocks and completed:
-                returnmessage = {message[0],message[1],message[2],message[3],True,0,0,0}  #return message (confirm) in the form (TS,seq,mode,TT,good(bool),A,B,C)
+            if counts[0] == metablocks and completed:
+                returnmessage = (message[0],message[1],message[2],message[3],True,0.,0.,0.)  #return message (confirm) in the form (TS,seq,mode,TT,good(bool),A,B,C)
             yield pulser.stop_sequence()
             if not started or not completed:
-                returnmessage = {message[0],message[1],message[2],message[3],False,0,0,0}  #return message (confirm) in the form (TS,seq,mode,TT,good(bool),A,B,C)
-                self.messageout('Pulser: Timed out')
+                returnmessage = (message[0],message[1],message[2],message[3],False,0.,0.,0.)  #return message (confirm) in the form (TS,seq,mode,TT,good(bool),A,B,C)
+                if not started:
+                    self.messageout('Pulser: Timed out. Did not receive starting trigger')
+                elif not completed:
+                    self.messageout('Pulser: Timed out. Did not finish sequence in time')
             self.sendIdtoParameterVault(returnmessage)
         self.threadcounter -= 1
         if self.threadcounter == 0:
@@ -710,8 +716,30 @@ class EmittingStream(QObject):
     def write(self, text):
         self.textWritten.emit(str(text))
 
+def logo():
+    logostring = ["40 40 3 1"," 	c None",".	c #FFFFFF","+	c #000000",
+                  "........................................","........................................",".................++++++++...............","..............++++++++++++++............",
+                  ".+++++++....++++++++++++++++++..........",".+++++++++++++++++++++++++++++++........",".++.....+++++++++++++++++++++++++.......",".++.....++++++++++++++++++++++++++......",
+                  ".+++...+++++++++++++++++++++...++++.....","..++...+++++.+++++++++++++++....+++.....","..++..+++!.....+++++++++++......++++....","..+++.+++........++++++++......++++++...",
+                  "...++.+++++++.....++++++......++..+++...","....+++++++++......+++++.....++....+++..","....+..+++++++......+++++...++.....+++..","...+++..+++++++......+++++.++.....++++..",
+                  "...+++...+++++++........++++.....+++++..","...++++...++++++.........++.....+++++++.","...+++++..+++++++.........++...++.+++++.","...++++++...+++++.........+++.++...++++.",
+                  "...+++++++...+++++.........++++.....+++.","...++++++++..++++++........+++......+++.","....++++++++..+++++.........++.....++++.","....+++++++++...+++.........+++...++++..",
+                  ".....+++++++++...++.........+++++++++!..",".....++++++++++.............+++++++++...",".....+++++++++++............+++++++++...","......+++++++++.............++++++++....",
+                  "......++++++++.............++++++++++...",".......++++++..............+++++++++++..",".......+++++...............++++++++..+..",".........++...............++++++++...+..",
+                  "............................+++++....++.","........................+++....+......+.",".......................+++++..++......+.","......................+++++++++++++..++.",
+                  ".....................+++++++...++++++++.","..................................++++..","........................................","........................................",]
+    return logostring
+        
+        
+        
 if __name__== '__main__':
     app = QtGui.QApplication( [])
+    app.setWindowIcon(QtGui.QIcon(QtGui.QPixmap(logo())))
+    import ctypes
+    myappid = u'mycompany.myproduct.subproduct.version' # arbitrary string
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    
+    
     import qt4reactor
     qt4reactor.install()
     from twisted.internet import reactor
