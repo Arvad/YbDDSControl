@@ -1,6 +1,6 @@
 from PyQt4 import QtGui
 from PyQt4 import QtCore
-from PyQt4.QtCore import pyqtSignal,QThread, QObject, QEventLoop, QWaitCondition, QTimer, Qt, QSettings, QString
+from PyQt4.QtCore import pyqtSignal,QThread, QObject, QEventLoop, QWaitCondition, QTimer, Qt, QSettings, QString, QProcess
 from twisted.internet.defer import inlineCallbacks, Deferred
 from twisted.internet import threads
 from twisted.internet.task import LoopingCall
@@ -11,7 +11,7 @@ from DDS_CONTROL import DDS_CONTROL
 from parsingworker import ParsingWorker
 from pulserworker import PulserWorker
 import time
-import sys
+import sys, os
 
 
 def buttonstyle(color, **kwargs):
@@ -51,6 +51,7 @@ class mainwindow(QtGui.QMainWindow):
     def __init__(self,reactor, parent=None):
         super(mainwindow,self).__init__()
         self.reactor = reactor
+        self.pulserserverpath = "C:\Users\Katori lab\YbDDSControl\servers\Pulser\pulser_ok.py"
         self.initialize()
         self.ParamID = None
         self.textlist = [[],[],[],[]]
@@ -68,6 +69,9 @@ class mainwindow(QtGui.QMainWindow):
     # be able to yield, and __init__ cannot do that
     @inlineCallbacks
     def initialize(self):
+        self.pulserserver = serverwidget('Pulser',self.pulserserverpath)
+        self.pulserserver.start_server()
+        time.sleep(5)
         yield self.connect_labrad()
         yield self.create_layout()
         self.messageout('Layout done')
@@ -89,8 +93,8 @@ class mainwindow(QtGui.QMainWindow):
         p = yield self.connection.get_server('Pulser')
         self.hwconfigpath = yield p.get_hardwareconfiguration_path()
         self.linetriggerstate = yield p.line_trigger_state()
-       
-
+        
+    
 ########################################################################
 #########                                                      #########
 #########               Creating the GUI                       #########
@@ -114,6 +118,7 @@ class mainwindow(QtGui.QMainWindow):
         tabwidget.addTab(controlwidget,'Controls')
         tabwidget.addTab(spectrumplottingwidget,'Spectra')
         tabwidget.addTab(stdoutwidget,'StdOut')
+        tabwidget.addTab(self.pulserserver,'Pulser server')
         
         
         layout = QtGui.QHBoxLayout(self)
@@ -143,7 +148,7 @@ class mainwindow(QtGui.QMainWindow):
             value = asplitter.sizes()
             settings.setValue(name,value)
         settings.sync()
-
+        self.pulserserver.kill_server()
         self.reactor.stop()
 
     def restoreGui(self):
@@ -715,9 +720,76 @@ class EmittingStream(QObject):
 
     def write(self, text):
         self.textWritten.emit(str(text))
+        
+class serverwidget(QtGui.QFrame):
 
+    def __init__(self,aname,apath):
+        super(serverwidget, self).__init__()
+        self.process = None
+        self.path = apath
+        self.name = aname
+        self.setFrameStyle(QtGui.QFrame.Panel | QtGui.QFrame.Sunken)
+        title = QtGui.QLabel(self.name)
+        startbutton = QtGui.QPushButton('START')
+        killbutton = QtGui.QPushButton('TERMINATE')
+        pingbutton = QtGui.QPushButton('PING')
+        self.textfield = QtGui.QTextEdit()
+        self.textfield.setReadOnly(True)
+        startbutton.pressed.connect(self.start_server)
+        killbutton.pressed.connect(self.kill_server)
+        pingbutton.pressed.connect(self.ping_server)
+        
+        sublayout = QtGui.QVBoxLayout()
+        sublayout.addWidget(title)
+        sublayout.addWidget(startbutton)
+        sublayout.addWidget(killbutton)
+        sublayout.addWidget(pingbutton)
+        sublayout.addWidget(self.textfield)
+        self.setLayout(sublayout)
+        
+    def start_server(self):
+        if self.process is None:
+            self.process = QProcess()
+            self.process.readyReadStandardOutput.connect(self.read_output)
+            self.process.started.connect(lambda : self.write_message('Server started')) 
+            self.process.finished.connect(lambda : self.write_message('Server stopped'))
+            self.process.setProcessChannelMode(QProcess.MergedChannels)
+            self.process.setWorkingDirectory(os.path.dirname(self.path))
+            self.process.start('python',[self.path])
+        else:
+            self.textfield.append('Cannot start "{:}", as it is already running'.format(self.name))
+
+    def kill_server(self):
+        if self.process is not None:
+            self.process.terminate()
+            self.process = None
+        else:
+            self.textfield.append('Cannot terminate "{:}", as it is not running'.format(self.name))
+    
+    def ping_server(self):
+        if self.process is not None:
+            state = self.process.state()
+            msg = "PING: "
+            if state == 0:
+                msg +='Process died'
+            elif state == 1:
+                msg +='Process is starting up'
+            elif state == 2:
+                msg += 'Process is alive'
+            self.textfield.append(msg)
+        else:
+            self.textfield.append('Cannot ping a server that is not started')
+
+    def read_output(self):
+        data = self.process.readAllStandardOutput()
+        self.textfield.append(str(data))        
+
+    def write_message(self,message):
+        self.textfield.append(message)
+        
+        
 def logo():
-    logostring = ["40 40 3 1"," 	c None",".	c #FFFFFF","+	c #000000",
+    logostring = ["40 40 3 1"," 	c None","+	c #FFA500",".	c #000000",
                   "........................................","........................................",".................++++++++...............","..............++++++++++++++............",
                   ".+++++++....++++++++++++++++++..........",".+++++++++++++++++++++++++++++++........",".++.....+++++++++++++++++++++++++.......",".++.....++++++++++++++++++++++++++......",
                   ".+++...+++++++++++++++++++++...++++.....","..++...+++++.+++++++++++++++....+++.....","..++..+++!.....+++++++++++......++++....","..+++.+++........++++++++......++++++...",
