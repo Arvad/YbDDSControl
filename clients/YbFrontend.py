@@ -4,14 +4,8 @@ from PyQt4.QtCore import pyqtSignal,QThread, QObject, QEventLoop, QWaitCondition
 from twisted.internet.defer import inlineCallbacks, Deferred
 from twisted.internet import threads
 from twisted.internet.task import LoopingCall
-import threading
-from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvasQTAgg
-import matplotlib.pyplot as plt
-from DDS_CONTROL import DDS_CONTROL
 from parsingworker import ParsingWorker
-from pulserworker import PulserWorker
-import time
-import sys, os
+import time, sys, os
 
 
 def buttonstyle(color, **kwargs):
@@ -174,7 +168,8 @@ class mainwindow(QtGui.QMainWindow):
             name = asplitter.objectName()
             values = settings.value(name).toList()
             asplitter.setSizes([x.toInt()[0] for x in values])
-    #################
+
+            #################
     # Spectrum plotting tab panel
     #################
     def makeSpectrumPlottingWidget(self):
